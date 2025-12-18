@@ -1,0 +1,47 @@
+# Claude related folders
+.claude/
+.claude*
+
+# Resource API - User uploaded assets
+resource_api/resource/
+
+# Environment variables
+*.env
+!*.env.example
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build outputs
+dist/
+build/
+*.js.map
+
+# Temporary files
+*.tmp
+*.temp

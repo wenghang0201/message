@@ -1,0 +1,67 @@
+/* Chat System Theme Variables */
+:root {
+  /* Primary Colors - Blue Theme (matches Vant default buttons) */
+  --chat-primary-color: #1989fa;        /* Main brand color (Vant blue) */
+  --chat-primary-light: #3da1fb;        /* Lighter shade for hover states */
+  --chat-primary-dark: #1475d4;         /* Darker shade for active states */
+
+  /* Sent Message Colors */
+  --chat-sent-bg: #1989fa;              /* Background for sent messages */
+  --chat-sent-text: #ffffff;            /* Text color for sent messages */
+
+  /* Received Message Colors */
+  --chat-received-bg: #f2f3f5;          /* Background for received messages */
+  --chat-received-text: #323233;        /* Text color for received messages */
+
+  /* UI Colors */
+  --chat-background: #f7f8fa;           /* Main background color */
+  --chat-card-bg: #ffffff;              /* Card/list item background */
+  --chat-border: #ebedf0;               /* Border color */
+
+  /* Text Colors */
+  --chat-text-primary: #323233;         /* Primary text color */
+  --chat-text-secondary: #969799;       /* Secondary text color (timestamps, etc) */
+  --chat-text-disabled: #c8c9cc;        /* Disabled text color */
+
+  /* Status Colors */
+  --chat-online: #07c160;               /* Online indicator color (keep green for online) */
+  --chat-offline: #ccc;                 /* Offline indicator color */
+  --chat-error: #ee0a24;                /* Error/danger color */
+  --chat-warning: #ff976a;              /* Warning color */
+  --chat-info: #1989fa;                 /* Info color */
+
+  /* Badge Colors */
+  --chat-badge-bg: #ee0a24;             /* Unread badge background */
+  --chat-badge-text: #ffffff;           /* Unread badge text */
+
+  /* Interactive Elements */
+  --chat-link: #1989fa;                 /* Link color */
+  --chat-hover-bg: #f7f8fa;             /* Hover background */
+  --chat-active-bg: #ebedf0;            /* Active/pressed background */
+
+  /* Shadows */
+  --chat-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --chat-shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --chat-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
+
+  /* Border Radius */
+  --chat-radius-sm: 4px;
+  --chat-radius-md: 8px;
+  --chat-radius-lg: 12px;
+  --chat-radius-xl: 16px;
+
+  /* Spacing (for consistent padding/margins) */
+  --chat-space-xs: 4px;
+  --chat-space-sm: 8px;
+  --chat-space-md: 12px;
+  --chat-space-lg: 16px;
+  --chat-space-xl: 24px;
+}
+
+.van-notify--success {
+  background-color: var(--chat-online) !important;
+}
+
+.van-notify--danger {
+  background-color: var(--chat-error) !important;
+}

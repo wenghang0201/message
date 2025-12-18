@@ -1,0 +1,4 @@
+{
+  "serverPort": 9003,
+  "resourceApiUrl": "http://127.0.0.1:9001"
+}

@@ -1,0 +1,28 @@
+{
+  "name": "chat",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "pinia": "^2.3.0",
+    "socket.io-client": "^4.8.1",
+    "vant": "^4.9.14",
+    "vue": "^3.5.13",
+    "vue-router": "4",
+    "wavesurfer.js": "^7.11.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "~5.6.3",
+    "unplugin-auto-import": "^0.18.6",
+    "unplugin-vue-components": "^0.27.4",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}
