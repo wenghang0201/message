@@ -161,10 +161,6 @@ export class MessageController {
       const userId = req.userId!;
       const { messageIds } = req.body;
 
-      if (!Array.isArray(messageIds) || messageIds.length === 0) {
-        return ResponseUtil.badRequest(res, "messageIds must be a non-empty array");
-      }
-
       const result = await messageService.batchDeleteMessages(messageIds, userId);
 
       // 为每条删除的消息通知会话参与者

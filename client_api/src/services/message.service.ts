@@ -1,5 +1,5 @@
-import { Repository, IsNull, In } from "typeorm";
-import { Message, MessageType } from "../models/Message.entity";
+import { Repository, IsNull } from "typeorm";
+import { Message } from "../models/Message.entity";
 import { Conversation, ConversationType } from "../models/Conversation.entity";
 import { ConversationUser } from "../models/ConversationUser.entity";
 import { Friend, FriendStatus } from "../models/Friend.entity";
@@ -9,7 +9,6 @@ import {
   ForbiddenError,
   ValidationError,
 } from "../utils/app-error.util";
-import Log from "../utils/log.util";
 import { SendMessageDto } from "../schemas/message.schema";
 import conversationService from "./conversation.service";
 
@@ -154,7 +153,7 @@ export class MessageService {
   }
 
   /**
-   * 获取对话消息列表（分页）
+   * 获取对话消息列表（分页）- 优化版，减少N+1查询
    */
   public async getMessages(
     conversationId: string,
@@ -189,9 +188,12 @@ export class MessageService {
     // 获取消息总数
     const total = await queryBuilder.getCount();
 
-    // 获取消息（按时间倒序），同时加载已读状态
+    // 获取消息（按时间倒序），同时使用eager loading加载已读状态和发送者信息
+    // 这样可以避免N+1查询问题
     const messages = await queryBuilder
       .leftJoinAndSelect("message.statuses", "status")
+      .leftJoinAndSelect("message.sender", "sender")
+      .leftJoinAndSelect("sender.profile", "senderProfile")
       .orderBy("message.createdAt", "DESC")
       .skip(skip)
       .take(limit)

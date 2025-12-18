@@ -1,6 +1,7 @@
 # Claude related folders
 .claude/
 .claude*
+*CLAUDE*
 
 # Resource API - User uploaded assets
 resource_api/resource/

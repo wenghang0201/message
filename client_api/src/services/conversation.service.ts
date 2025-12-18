@@ -1,10 +1,9 @@
-import { Repository, IsNull, In } from "typeorm";
+import { Repository, IsNull } from "typeorm";
 import { Conversation, ConversationType, MessageSendPermission, MemberAddPermission } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
 import { Message, MessageType } from "../models/Message.entity";
 import { MessageStatus, DeliveryStatus } from "../models/MessageStatus.entity";
 import { User } from "../models/User.entity";
-import { UserProfile } from "../models/UserProfile.entity";
 import { Friend, FriendStatus } from "../models/Friend.entity";
 import { AppDataSource } from "../config/database";
 import {
@@ -26,7 +25,6 @@ export class ConversationService {
   private messageRepository: Repository<Message>;
   private messageStatusRepository: Repository<MessageStatus>;
   private userRepository: Repository<User>;
-  private userProfileRepository: Repository<UserProfile>;
   private friendRepository: Repository<Friend>;
 
   constructor() {
@@ -36,7 +34,6 @@ export class ConversationService {
     this.messageRepository = AppDataSource.getRepository(Message);
     this.messageStatusRepository = AppDataSource.getRepository(MessageStatus);
     this.userRepository = AppDataSource.getRepository(User);
-    this.userProfileRepository = AppDataSource.getRepository(UserProfile);
     this.friendRepository = AppDataSource.getRepository(Friend);
   }
 
@@ -94,12 +91,14 @@ export class ConversationService {
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    // 1. 获取用户参与的所有对话（排除已删除的）
-    const conversationUsers = await this.conversationUserRepository.find({
-      where: { userId, deletedAt: IsNull() },
-      relations: ["conversation"],
-      order: { conversation: { updatedAt: "DESC" } },
-    });
+    // 1. 获取用户参与的所有对话（排除已删除的）- 使用eager loading
+    const conversationUsers = await this.conversationUserRepository
+      .createQueryBuilder("cu")
+      .leftJoinAndSelect("cu.conversation", "conversation")
+      .where("cu.userId = :userId", { userId })
+      .andWhere("cu.deletedAt IS NULL")
+      .orderBy("conversation.updatedAt", "DESC")
+      .getMany();
 
     if (conversationUsers.length === 0) {
       return [];
@@ -107,11 +106,13 @@ export class ConversationService {
 
     const conversationIds = conversationUsers.map(cu => cu.conversation.id);
 
-    // 2. 批量获取所有对话的参与者（一次查询代替 N 次）
-    const allParticipants = await this.conversationUserRepository.find({
-      where: { conversationId: In(conversationIds) },
-      relations: ["user", "user.profile"],
-    });
+    // 2. 批量获取所有对话的参与者（一次查询代替 N 次）- 使用eager loading
+    const allParticipants = await this.conversationUserRepository
+      .createQueryBuilder("cu")
+      .leftJoinAndSelect("cu.user", "user")
+      .leftJoinAndSelect("user.profile", "profile")
+      .where("cu.conversationId IN (:...conversationIds)", { conversationIds })
+      .getMany();
 
     // 按对话 ID 分组参与者
     const participantsByConversation = new Map<string, ConversationUser[]>();
@@ -622,7 +623,7 @@ export class ConversationService {
   }
 
   /**
-   * 获取群聊成员列表
+   * 获取群聊成员列表 - 优化版，使用eager loading减少查询
    */
   public async getGroupMembers(conversationId: string, userId: string) {
     // 验证会话是否存在 and user is a member
@@ -647,12 +648,16 @@ export class ConversationService {
       throw new ForbiddenError("您不是此群组的成员");
     }
 
-    // 获取所有成员
-    const members = await this.conversationUserRepository.find({
-      where: { conversationId, deletedAt: IsNull() },
-      relations: ["user", "user.profile"],
-      order: { role: "DESC", joinedAt: "ASC" },
-    });
+    // 获取所有成员 - 使用QueryBuilder进行eager loading和排序
+    const members = await this.conversationUserRepository
+      .createQueryBuilder("cu")
+      .leftJoinAndSelect("cu.user", "user")
+      .leftJoinAndSelect("user.profile", "profile")
+      .where("cu.conversationId = :conversationId", { conversationId })
+      .andWhere("cu.deletedAt IS NULL")
+      .orderBy("cu.role", "DESC")
+      .addOrderBy("cu.joinedAt", "ASC")
+      .getMany();
 
     return members.map((member) => ({
       userId: member.userId,
