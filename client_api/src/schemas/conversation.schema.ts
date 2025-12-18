@@ -12,12 +12,14 @@ export const createSingleConversationSchema = yup.object({
 
 /**
  * 标记消息为已读
+ * messageId 可选 - 如果不提供则标记所有消息为已读
  */
 export const markAsReadSchema = yup.object({
   messageId: yup
     .string()
-    .required("Message ID is required")
-    .uuid("Invalid message ID format"),
+    .uuid("Invalid message ID format")
+    .optional()
+    .nullable(),
 });
 
 /**

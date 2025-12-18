@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 import express, { Express } from "express";
 import { createServer } from "http";
 import cors from "cors";
+import helmet from "helmet";
 import Tool from "./utils/tool.util";
 import Log from "./utils/log.util";
 import appConfig from "./config/app.config";
@@ -13,6 +14,7 @@ import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
 import friendRoutes from "./routes/friend.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
+import { apiRateLimiter } from "./middleware/rate-limit.middleware";
 import websocketService from "./services/websocket.service";
 
 // 加载环境变量
@@ -50,6 +52,15 @@ class App {
 
       // 初始化Express
       this._express = express();
+
+      // 安全中间件 - Helmet 添加安全头
+      this._express.use(helmet({
+        contentSecurityPolicy: false, // 禁用CSP以兼容WebSocket
+        crossOriginEmbedderPolicy: false, // 允许跨域资源
+      }));
+
+      // 通用API速率限制
+      this._express.use("/api", apiRateLimiter);
 
       // 中间件
       this._express.use(cors({

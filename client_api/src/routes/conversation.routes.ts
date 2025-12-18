@@ -2,6 +2,7 @@ import { Router } from "express";
 import conversationController from "../controllers/conversation.controller";
 import { authenticateToken } from "../middleware/auth.middleware";
 import { validateBody } from "../middleware/validation.middleware";
+import { readOperationsRateLimiter } from "../middleware/rate-limit.middleware";
 import {
   createSingleConversationSchema,
   createGroupConversationSchema,
@@ -64,6 +65,7 @@ class ConversationRoutes {
     // 标记消息为已读
     this.router.post(
       "/conversations/:conversationId/read",
+      readOperationsRateLimiter,
       validateBody(markAsReadSchema),
       conversationController.markAsRead.bind(conversationController)
     );

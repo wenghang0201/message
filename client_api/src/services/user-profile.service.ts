@@ -32,8 +32,6 @@ export class UserProfileService {
         userId,
         privacySettings: {
           showLastSeen: "everyone",
-          showProfilePhoto: "everyone",
-          showStatus: "everyone",
         },
       });
       await this.userProfileRepository.save(profile);
@@ -92,22 +90,6 @@ export class UserProfileService {
       profile.isOnline = false;
     }
 
-    // 隐藏头像
-    if (
-      privacySettings.showProfilePhoto === "nobody" ||
-      (privacySettings.showProfilePhoto === "friends" && !isFriend)
-    ) {
-      profile.avatarUrl = null;
-    }
-
-    // 隐藏状态消息
-    if (
-      privacySettings.showStatus === "nobody" ||
-      (privacySettings.showStatus === "friends" && !isFriend)
-    ) {
-      profile.statusMessage = null;
-    }
-
     return { ...profile, user: { ...user, passwordHash: undefined } } as any;
   }
 
@@ -157,8 +139,6 @@ export class UserProfileService {
     userId: string,
     settings: {
       showLastSeen?: "everyone" | "friends" | "nobody";
-      showProfilePhoto?: "everyone" | "friends" | "nobody";
-      showStatus?: "everyone" | "friends" | "nobody";
     }
   ): Promise<UserProfile> {
     let profile = await this.getOrCreateProfile(userId);

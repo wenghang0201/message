@@ -5,6 +5,7 @@ import * as path from "path";
 import express = require("express");
 import { Express } from "express";
 import cors = require("cors");
+import helmet = require("helmet");
 import Log from "./utils/log.util";
 import appConfig from "./config/app.config";
 import { initializeDatabase } from "./config/database";
@@ -48,17 +49,25 @@ class App {
       //初始化Express
       this._express = express();
 
+      // 安全中间件 - Helmet
+      this._express.use(helmet({
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false,
+        crossOriginResourcePolicy: { policy: "cross-origin" }, // 允许跨域资源加载
+      }));
+
       //CORS中间件 - 允许前端访问
       this._express.use(cors({
         origin: function(origin, callback) {
-          // 允许所有 trycloudflare.com 域名和 localhost
-          const allowedOrigins = [
-            'http://localhost:3000',
-            'http://127.0.0.1:3000'
+          // 允许所有 localhost 和 127.0.0.1 端口，以及 trycloudflare.com
+          const allowedPatterns = [
+            /^http:\/\/localhost:\d+$/,
+            /^http:\/\/127\.0\.0\.1:\d+$/,
+            /trycloudflare\.com$/
           ];
 
-          // 如果 origin 是 undefined (比如 Postman) 或在允许列表中，或者是 trycloudflare.com
-          if (!origin || allowedOrigins.includes(origin) || origin.includes('trycloudflare.com')) {
+          // 如果 origin 是 undefined (比如直接访问、Postman等) 或匹配允许的模式
+          if (!origin || allowedPatterns.some(pattern => pattern.test(origin))) {
             callback(null, true);
           } else {
             callback(new Error('Not allowed by CORS'));
@@ -66,12 +75,13 @@ class App {
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        exposedHeaders: ['Content-Type', 'Content-Length', 'Content-Disposition']
       }));
 
-      //中间件
-      this._express.use(express.json({ limit: "50mb" })); // 支持大文件的JSON
-      this._express.use(express.urlencoded({ extended: true, limit: "50mb" }));
+      //中间件 - 降低JSON限制，大文件应使用multipart/form-data
+      this._express.use(express.json({ limit: "10mb" })); // JSON负载限制
+      this._express.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
       //使用路由
       this._express.use(uploadRoutes); // 自动加密的文件上传

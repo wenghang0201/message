@@ -40,7 +40,7 @@ export class UserProfile {
 
   @Column({ type: "json", nullable: true, name: "privacy_settings" })
   privacySettings: {
-    showLastSeen?: "everyone" | "nobody";
+    showLastSeen?: "everyone" | "friends" | "nobody";
   } | null;
 
   @CreateDateColumn({ name: "created_at" })

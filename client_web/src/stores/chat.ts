@@ -183,7 +183,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 标记会话为已读
-  async function markConversationAsRead(conversationId: string, messageId: string) {
+  async function markConversationAsRead(conversationId: string, messageId?: string) {
     try {
       await conversationService.markAsRead(conversationId, messageId)
       markAsRead(conversationId)

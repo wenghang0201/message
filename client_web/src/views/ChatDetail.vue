@@ -57,7 +57,6 @@
         <MessageBubble
           v-for="message in messages"
           :key="message.id"
-          :ref="(el) => setMessageRef(el, message.id)"
           :message="message"
           :is-sent="message.senderId === currentUserId"
           :sender="getSender(message.senderId)"
@@ -148,7 +147,6 @@ import ForwardMessageDialog from '@/components/chat/ForwardMessageDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { Message } from '@/types/message'
 import { useVoiceRecordingWorkflow } from '@/composables/useVoiceRecordingWorkflow'
-import { useMessageReadObserver } from '@/composables/useMessageReadObserver'
 import websocketService from '@/services/websocket.service'
 
 interface Props {
@@ -176,54 +174,24 @@ const replyingToMessage = ref<Message | null>(null)
 const selectionMode = ref(false)
 const selectedMessageIds = ref(new Set<string>())
 
-// 存储消息组件的 ref
-const messageRefs = new Map<string, any>()
-const lastReadMessageId = ref<string | null>(null)
-// 跟踪之前的消息计数以检测分页与新消息
-const previousMessageCount = ref(0)
+// 跟踪是否已标记为已读，避免重复调用
+const hasMarkedAsRead = ref(false)
 
-// 设置消息 ref
-const setMessageRef = (el: any, messageId: string) => {
-  if (el) {
-    messageRefs.set(messageId, el)
-  } else {
-    messageRefs.delete(messageId)
+// 标记所有消息为已读
+const markAllAsRead = async () => {
+  if (hasMarkedAsRead.value) return
+
+  try {
+    hasMarkedAsRead.value = true
+    // 调用 API 时不传 messageId，标记所有消息为已读
+    await chatStore.markConversationAsRead(props.id)
+    // 立即更新 UI（乐观更新）
+    chatStore.markAsRead(props.id)
+  } catch (error) {
+    // 忽略错误，但重置标记以允许重试
+    hasMarkedAsRead.value = false
   }
 }
-
-// Intersection Observer 用于监听消息是否可见
-const { observe } = useMessageReadObserver({
-  threshold: 0.5,
-  onMessageVisible: async (messageId: string) => {
-    // 查找消息
-    const message = messageStore.getMessageById(messageId)
-
-    // 只标记其他人发送的消息为已读
-    if (!message || message.senderId === currentUserId.value) {
-      return
-    }
-
-    // 如果消息已经是已读状态，不需要再次调用 API
-    if (message.status === 'read') {
-      return
-    }
-
-    // 避免重复标记相同消息
-    if (lastReadMessageId.value === messageId) {
-      return
-    }
-
-    lastReadMessageId.value = messageId
-
-    try {
-      await chatStore.markConversationAsRead(props.id, messageId)
-      // 立即更新 UI（乐观更新）
-      chatStore.markAsRead(props.id)
-    } catch (error) {
-      // 忽略错误
-    }
-  },
-})
 
 const voiceRecording = useVoiceRecordingWorkflow({
   onStateChange: (state) => {
@@ -403,26 +371,10 @@ onMounted(async () => {
   await loadMessages()
   scrollToBottom()
 
-  // 等待 DOM 更新后为所有消息设置 Intersection Observer
-  await nextTick()
-  setTimeout(() => {
-    setupMessageObservers()
-  }, 100)
+  // 标记所有消息为已读
+  await markAllAsRead()
 })
 
-// 为所有消息设置观察器
-const setupMessageObservers = () => {
-  const msgs = messages.value
-  msgs.forEach(msg => {
-    // 只观察其他人发送的消息
-    if (msg.senderId !== currentUserId.value) {
-      const messageRef = messageRefs.get(msg.id)
-      if (messageRef?.bubbleRef) {
-        observe(messageRef.bubbleRef, msg.id)
-      }
-    }
-  })
-}
 
 onBeforeUnmount(() => {
   // 离开 WebSocket 会话房间
@@ -457,15 +409,13 @@ watch(() => props.id, async (newId, oldId) => {
     await loadMessages()
     scrollToBottom()
 
-    // 设置新对话的观察器
-    await nextTick()
-    setTimeout(() => {
-      setupMessageObservers()
-    }, 100)
+    // 重置已读标记并标记所有消息为已读
+    hasMarkedAsRead.value = false
+    await markAllAsRead()
   }
 })
 
-// 监听消息列表变化，为新消息设置观察器
+// 监听消息列表变化，自动滚动到底部
 watch(() => messages.value.length, async (newLength, oldLength) => {
   if (newLength > oldLength) {
     // 检查用户是否在底部（在 DOM 更新之前检查）
@@ -473,43 +423,16 @@ watch(() => messages.value.length, async (newLength, oldLength) => {
 
     // 有新消息到达，等待 DOM 更新
     await nextTick()
-    setTimeout(() => {
-      const msgs = messages.value
-      const countDiff = newLength - oldLength
 
-      // 判断是新消息（添加到末尾）还是旧消息（添加到开头）
-      // 如果用户在底部附近，很可能是新消息到达
-      // 如果用户不在底部且正在加载更多，则是旧消息分页加载
-      const isLoadingOldMessages = loadingMore.value || !wasNearBottom
+    // 判断是新消息（添加到末尾）还是旧消息（添加到开头）
+    // 如果用户在底部附近，很可能是新消息到达
+    // 如果用户不在底部且正在加载更多，则是旧消息分页加载
+    const isLoadingOldMessages = loadingMore.value || !wasNearBottom
 
-      let messagesToObserve: typeof msgs = []
-
-      if (isLoadingOldMessages) {
-        // 分页加载：新消息在数组开头（prepended）
-        messagesToObserve = msgs.slice(0, countDiff)
-      } else {
-        // 实时消息：新消息在数组末尾（appended）
-        messagesToObserve = msgs.slice(oldLength)
-      }
-
-      messagesToObserve.forEach(msg => {
-        // 只观察其他人发送的消息
-        if (msg.senderId !== currentUserId.value) {
-          const messageRef = messageRefs.get(msg.id)
-          if (messageRef?.bubbleRef) {
-            observe(messageRef.bubbleRef, msg.id)
-          }
-        }
-      })
-
-      // 只有当用户在底部附近且不是加载旧消息时才自动滚动到底部
-      if (wasNearBottom && !isLoadingOldMessages) {
-        scrollToBottom()
-      }
-    }, 50)
-
-    // 更新之前的计数
-    previousMessageCount.value = newLength
+    // 只有当用户在底部附近且不是加载旧消息时才自动滚动到底部
+    if (wasNearBottom && !isLoadingOldMessages) {
+      scrollToBottom()
+    }
   }
 })
 
@@ -517,8 +440,6 @@ const loadMessages = async () => {
   try {
     loadingMessages.value = true
     await messageStore.fetchMessages(props.id, 1, 30)
-    // 初始加载后初始化之前的消息计数
-    previousMessageCount.value = messages.value.length
   } catch (error) {
     showNotify({
       type: 'danger',

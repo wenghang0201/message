@@ -1,4 +1,4 @@
-import { Repository, IsNull } from "typeorm";
+import { Repository, IsNull, In } from "typeorm";
 import { Conversation, ConversationType, MessageSendPermission, MemberAddPermission } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
 import { Message, MessageType } from "../models/Message.entity";
@@ -89,18 +89,65 @@ export class ConversationService {
   }
 
   /**
-   * 获取用户的所有对话列表
+   * 获取用户的所有对话列表（优化版 - 批量查询减少 N+1 问题）
    */
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    // 获取用户参与的所有对话（排除已删除的）
+    // 1. 获取用户参与的所有对话（排除已删除的）
     const conversationUsers = await this.conversationUserRepository.find({
       where: { userId, deletedAt: IsNull() },
       relations: ["conversation"],
       order: { conversation: { updatedAt: "DESC" } },
     });
 
+    if (conversationUsers.length === 0) {
+      return [];
+    }
+
+    const conversationIds = conversationUsers.map(cu => cu.conversation.id);
+
+    // 2. 批量获取所有对话的参与者（一次查询代替 N 次）
+    const allParticipants = await this.conversationUserRepository.find({
+      where: { conversationId: In(conversationIds) },
+      relations: ["user", "user.profile"],
+    });
+
+    // 按对话 ID 分组参与者
+    const participantsByConversation = new Map<string, ConversationUser[]>();
+    allParticipants.forEach(participant => {
+      const conversationId = participant.conversationId;
+      if (!participantsByConversation.has(conversationId)) {
+        participantsByConversation.set(conversationId, []);
+      }
+      participantsByConversation.get(conversationId)!.push(participant);
+    });
+
+    // 3. 批量获取最后一条消息（一次查询代替 N 次）
+    // 注意：需要考虑每个用户的 hiddenUntil
+    const lastMessages = await this.messageRepository
+      .createQueryBuilder("message")
+      .where("message.conversationId IN (:...conversationIds)", { conversationIds })
+      .andWhere("message.deletedAt IS NULL")
+      .andWhere((qb) => {
+        const subQuery = qb
+          .subQuery()
+          .select("MAX(m2.createdAt)")
+          .from(Message, "m2")
+          .where("m2.conversationId = message.conversationId")
+          .andWhere("m2.deletedAt IS NULL")
+          .getQuery();
+        return `message.createdAt = ${subQuery}`;
+      })
+      .getMany();
+
+    // 按对话 ID 映射最后消息
+    const lastMessageByConversation = new Map<string, Message>();
+    lastMessages.forEach(msg => {
+      lastMessageByConversation.set(msg.conversationId, msg);
+    });
+
+    // 4. 构建对话列表
     const conversations: ConversationListItem[] = [];
 
     for (const cu of conversationUsers) {
@@ -112,16 +159,12 @@ export class ConversationService {
       let isOnline: boolean | undefined;
       let lastSeenAt: Date | null | undefined;
 
-      // 单聊：获取对方用户信息
+      // 单聊：从已加载的参与者中获取对方用户信息
       if (conversation.type === ConversationType.SINGLE) {
-        const participants = await this.conversationUserRepository.find({
-          where: { conversationId: conversation.id },
-          relations: ["user", "user.profile"],
-        });
-
+        const participants = participantsByConversation.get(conversation.id) || [];
         const otherParticipant = participants.find(p => p.userId !== userId);
 
-        if (otherParticipant) {
+        if (otherParticipant?.user) {
           otherUserId = otherParticipant.userId;
           name = otherParticipant.user.username;
           avatar = otherParticipant.user.profile?.avatarUrl || null;
@@ -140,24 +183,23 @@ export class ConversationService {
         }
       }
 
-      // 获取最后一条消息（排除用户隐藏时间之前的消息）
-      const queryBuilder = this.messageRepository
-        .createQueryBuilder("message")
-        .where("message.conversationId = :conversationId", { conversationId: conversation.id })
-        .andWhere("message.deletedAt IS NULL");
+      // 获取最后一条消息（从已加载的映射中获取）
+      let lastMessage = lastMessageByConversation.get(conversation.id) || null;
 
-      // 如果用户有hiddenUntil时间，只显示该时间之后的消息
-      if (cu.hiddenUntil) {
-        queryBuilder.andWhere("message.createdAt > :hiddenUntil", {
-          hiddenUntil: cu.hiddenUntil,
-        });
+      // 如果用户有 hiddenUntil，需要过滤掉该时间之前的消息
+      if (lastMessage && cu.hiddenUntil && lastMessage.createdAt <= cu.hiddenUntil) {
+        // 需要重新查询该时间之后的最后一条消息
+        const filteredMessage = await this.messageRepository
+          .createQueryBuilder("message")
+          .where("message.conversationId = :conversationId", { conversationId: conversation.id })
+          .andWhere("message.deletedAt IS NULL")
+          .andWhere("message.createdAt > :hiddenUntil", { hiddenUntil: cu.hiddenUntil })
+          .orderBy("message.createdAt", "DESC")
+          .getOne();
+        lastMessage = filteredMessage || null;
       }
 
-      const lastMessage = await queryBuilder
-        .orderBy("message.createdAt", "DESC")
-        .getOne();
-
-      // 计算未读数
+      // 计算未读数（保持原有的位置计算逻辑）
       const unreadCount = await this.getUnreadCount(conversation.id, userId);
 
       const item: ConversationListItem = {
@@ -415,7 +457,7 @@ export class ConversationService {
   public async markAsRead(
     conversationId: string,
     userId: string,
-    messageId: string
+    messageId?: string
   ): Promise<void> {
     const member = await this.conversationUserRepository.findOne({
       where: { conversationId, userId },
@@ -425,7 +467,26 @@ export class ConversationService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // 验证消息存在
+    // 如果没有提供 messageId，标记所有消息为已读
+    if (!messageId) {
+      // 获取最新的消息（来自其他用户）
+      const latestMessage = await this.messageRepository
+        .createQueryBuilder("message")
+        .where("message.conversationId = :conversationId", { conversationId })
+        .andWhere("message.senderId != :userId", { userId })
+        .andWhere("message.deletedAt IS NULL")
+        .orderBy("message.createdAt", "DESC")
+        .addOrderBy("message.id", "DESC")
+        .getOne();
+
+      if (latestMessage) {
+        member.lastReadMessageId = latestMessage.id;
+        await this.conversationUserRepository.save(member);
+      }
+      return;
+    }
+
+    // 原有逻辑：标记特定消息
     const message = await this.messageRepository.findOne({
       where: { id: messageId, conversationId },
     });
@@ -434,21 +495,32 @@ export class ConversationService {
       throw new NotFoundError("消息未找到");
     }
 
-    // 更新 lastReadMessageId
-    member.lastReadMessageId = messageId;
-    await this.conversationUserRepository.save(member);
+    // 只更新如果新消息更晚
+    let shouldUpdate = true;
+    if (member.lastReadMessageId) {
+      const currentLastRead = await this.messageRepository.findOne({
+        where: { id: member.lastReadMessageId },
+      });
 
-    // 创建或更新消息状态记录
+      if (currentLastRead && message.createdAt < currentLastRead.createdAt) {
+        shouldUpdate = false;
+      }
+    }
+
+    if (shouldUpdate) {
+      member.lastReadMessageId = messageId;
+      await this.conversationUserRepository.save(member);
+    }
+
+    // 更新消息状态
     let status = await this.messageStatusRepository.findOne({
       where: { messageId, userId },
     });
 
     if (status) {
-      // 更新现有状态为已读
       status.status = DeliveryStatus.READ;
       status.timestamp = new Date();
     } else {
-      // 创建新的已读状态记录
       status = this.messageStatusRepository.create({
         messageId,
         userId,
@@ -476,39 +548,45 @@ export class ConversationService {
 
     // 如果对话被隐藏（删除），只计算hiddenUntil之后的消息
     if (member.hiddenUntil) {
-      const query = this.messageRepository
+      // 获取hiddenUntil之后的所有消息
+      const allMessages = await this.messageRepository
         .createQueryBuilder("message")
         .where("message.conversationId = :conversationId", { conversationId })
         .andWhere("message.senderId != :userId", { userId })
         .andWhere("message.deletedAt IS NULL")
         .andWhere("message.createdAt > :hiddenUntil", {
           hiddenUntil: member.hiddenUntil,
-        });
+        })
+        .orderBy("message.createdAt", "ASC")
+        .addOrderBy("message.id", "ASC")
+        .getMany();
 
-      // 如果有lastReadMessageId，还要排除已读的消息
-      if (member.lastReadMessageId) {
-        const lastReadMessage = await this.messageRepository.findOne({
-          where: { id: member.lastReadMessageId },
-        });
-
-        if (lastReadMessage) {
-          query.andWhere("message.createdAt > :lastReadAt", {
-            lastReadAt: lastReadMessage.createdAt,
-          });
-        }
+      // 如果没有lastReadMessageId，返回所有hiddenUntil之后的消息数
+      if (!member.lastReadMessageId) {
+        return allMessages.length;
       }
 
-      return await query.getCount();
+      // 找到lastReadMessage在列表中的位置
+      const lastReadIndex = allMessages.findIndex(msg => msg.id === member.lastReadMessageId);
+
+      if (lastReadIndex === -1) {
+        // lastReadMessage不在hiddenUntil之后的列表中，返回所有消息数
+        return allMessages.length;
+      }
+
+      // 返回lastReadMessage之后的消息数量
+      return allMessages.length - lastReadIndex - 1;
     }
 
     if (!member.lastReadMessageId) {
       // 如果没有已读消息，返回所有消息数（排除自己发的）
-      return await this.messageRepository
+      const count = await this.messageRepository
         .createQueryBuilder("message")
         .where("message.conversationId = :conversationId", { conversationId })
         .andWhere("message.senderId != :userId", { userId })
         .andWhere("message.deletedAt IS NULL")
         .getCount();
+      return count;
     }
 
     // 获取最后已读消息
@@ -517,35 +595,30 @@ export class ConversationService {
     });
 
     if (!lastReadMessage) {
+      // 如果lastReadMessageId存在但消息已被删除，返回0
       return 0;
     }
 
-    // 获取所有未读消息（创建时间晚于已读消息，或同时间但不是已读消息本身）
+    // 获取对话中所有未删除的消息，按时间排序
     const allMessages = await this.messageRepository
       .createQueryBuilder("message")
       .where("message.conversationId = :conversationId", { conversationId })
       .andWhere("message.senderId != :userId", { userId })
       .andWhere("message.deletedAt IS NULL")
-      .andWhere("message.createdAt > :lastReadAt", {
-        lastReadAt: lastReadMessage.createdAt,
-      })
+      .orderBy("message.createdAt", "ASC")
+      .addOrderBy("message.id", "ASC")
       .getMany();
 
-    // 手动过滤掉已读消息本身和它之前的消息
-    const unreadMessages = allMessages.filter(msg => {
-      // 如果是已读消息本身，跳过
-      if (msg.id === member.lastReadMessageId) {
-        return false;
-      }
-      // 如果创建时间晚于已读消息，算未读
-      if (msg.createdAt > lastReadMessage.createdAt) {
-        return true;
-      }
-      // 如果创建时间相同，需要确保不是已读消息本身
-      return msg.createdAt.getTime() === lastReadMessage.createdAt.getTime() && msg.id !== member.lastReadMessageId;
-    });
+    // 找到lastReadMessage在列表中的位置
+    const lastReadIndex = allMessages.findIndex(msg => msg.id === member.lastReadMessageId);
 
-    return unreadMessages.length;
+    if (lastReadIndex === -1) {
+      // lastReadMessage不在列表中（可能是用户自己发的或已删除），返回所有消息数
+      return allMessages.length;
+    }
+
+    // 返回lastReadMessage之后的消息数量
+    return allMessages.length - lastReadIndex - 1;
   }
 
   /**

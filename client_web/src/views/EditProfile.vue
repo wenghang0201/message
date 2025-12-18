@@ -30,17 +30,18 @@
             <template #icon>
               <div class="avatar-upload">
                 <van-uploader
-                  v-model="avatarFile"
                   :max-count="1"
                   :preview-image="false"
                   :after-read="handleAvatarUpload"
                 >
                   <van-image
+                    :key="imageKey"
                     round
                     width="80"
                     height="80"
                     :src="avatarPreview || '/default-avatar.png'"
                     fit="cover"
+                    @error="handleImageError"
                   />
                   <div class="upload-overlay">
                     <van-icon name="photograph" size="24" />
@@ -87,7 +88,6 @@
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showLoadingToast, closeToast, showNotify } from 'vant'
-import type { UploaderFileListItem } from 'vant'
 import NavBar from '@/components/common/NavBar.vue'
 import profileService from '@/services/profile.service'
 import uploadService from '@/services/upload.service'
@@ -98,9 +98,9 @@ const router = useRouter()
 // 状态
 const loading = ref(false)
 const saving = ref(false)
-const avatarFile = ref<UploaderFileListItem[]>([])
 const avatarPreview = ref<string | null>(null)
 const originalProfile = ref<UserProfile | null>(null)
+const imageKey = ref(0) // 用于强制图片重新加载
 // 跟踪 blob URL 以便清理
 const blobUrls = ref<Set<string>>(new Set())
 
@@ -176,24 +176,41 @@ const handleAvatarUpload = async (fileOrFiles: UploaderFileListItem | UploaderFi
       })
     })
 
+    // 使用服务器 URL 和表单数据更新预览
+    formData.avatarUrl = fileUrl
+    console.log('上传成功，文件URL:', fileUrl)
+
+    // 先关闭加载提示
     closeToast()
 
-    // 使用服务器 URL 和表单数据更新预览
-    // 由于现在有服务器 URL，撤销旧的 blob URL
-    if (avatarPreview.value && blobUrls.value.has(avatarPreview.value)) {
-      URL.revokeObjectURL(avatarPreview.value)
-      blobUrls.value.delete(avatarPreview.value)
-    }
-    avatarPreview.value = fileUrl
-    formData.avatarUrl = fileUrl
+    // 预加载图片确保能正常显示
+    const img = new Image()
+    img.onload = () => {
+      console.log('图片预加载成功')
+      // 图片加载成功后更新预览
+      const oldBlobUrl = avatarPreview.value
+      avatarPreview.value = fileUrl
+      imageKey.value++ // 强制图片组件重新渲染
+      console.log('avatarPreview 已更新为:', avatarPreview.value)
 
-    // 显示成功通知前稍作延迟以改善用户体验
-    setTimeout(() => {
+      // 延迟撤销 blob URL，确保新图片已完全加载
+      setTimeout(() => {
+        if (oldBlobUrl && blobUrls.value.has(oldBlobUrl)) {
+          URL.revokeObjectURL(oldBlobUrl)
+          blobUrls.value.delete(oldBlobUrl)
+        }
+      }, 1000)
+    }
+    img.onerror = (error) => {
+      console.error('图片预加载失败:', error)
+      console.error('尝试加载的URL:', fileUrl)
+      // 图片加载失败，保持 blob URL 预览并显示警告
       showNotify({
-        type: 'success',
-        message: '头像上传成功',
+        type: 'warning',
+        message: '图片预览加载失败',
       })
-    }, 100)
+    }
+    img.src = fileUrl
   } catch (error: any) {
     closeToast()
     setTimeout(() => {
@@ -237,6 +254,10 @@ const handleSave = async () => {
   } finally {
     saving.value = false
   }
+}
+
+const handleImageError = () => {
+  console.error('图片加载失败:', avatarPreview.value)
 }
 
 const handleCancel = () => {

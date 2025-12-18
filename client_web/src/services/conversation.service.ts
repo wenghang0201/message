@@ -53,9 +53,11 @@ class ConversationService {
 
   /**
    * 标记消息为已读
+   * @param conversationId 会话ID
+   * @param messageId 可选的消息ID。如果不提供，则标记所有消息为已读
    */
-  async markAsRead(conversationId: string, messageId: string): Promise<void> {
-    await http.post(`/conversations/${conversationId}/read`, { messageId });
+  async markAsRead(conversationId: string, messageId?: string): Promise<void> {
+    await http.post(`/conversations/${conversationId}/read`, messageId ? { messageId } : {});
   }
 
   /**
