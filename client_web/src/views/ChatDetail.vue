@@ -14,7 +14,7 @@
       </template>
       <template #right>
         <van-icon
-          v-if="!selectionMode && currentChat?.type === 'group'"
+          v-if="!selectionMode && currentChat?.type === 'group' && !currentChat?.leftAt && !currentChat?.disbandedAt"
           name="setting-o"
           size="20"
           @click="goToGroupSettings"
