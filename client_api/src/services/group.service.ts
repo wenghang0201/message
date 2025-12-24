@@ -18,7 +18,6 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { SystemMessageCreator } from "../utils/system-message-creator.util";
-import { SPECIAL_DATES } from "../constants/business.config";
 import websocketService from "./websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 
@@ -596,17 +595,10 @@ export class GroupService {
     conversation.disbandedAt = new Date();
     await this.conversationRepository.save(conversation);
 
-    // 软删除所有成员记录（设置为MySQL最大时间戳以保留历史）
+    // 获取所有成员用于通知（不删除成员记录，让用户仍可看到已解散的群组）
     const allMembers = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
     });
-
-    const maxTimestamp = new Date(SPECIAL_DATES.MYSQL_TIMESTAMP_MAX);
-    allMembers.forEach(member => {
-      member.deletedAt = maxTimestamp;
-    });
-
-    await this.conversationUserRepository.save(allMembers);
 
     // 创建系统消息
     const ownerUser = await this.userRepository.findOne({
