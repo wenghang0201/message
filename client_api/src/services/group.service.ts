@@ -209,16 +209,32 @@ export class GroupService {
       requesterId
     );
 
-    // 通知所有成员（包括新成员）
+    // 获取会话信息用于NEW_CONVERSATION事件
+    const conversationInfo = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    // 通知所有成员
     const allMembers = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
       select: ["userId"],
     });
 
+    const newlyAddedMemberIds = new Set(memberIds);
+
     allMembers.forEach(member => {
-      websocketService.sendMessageToUser(member.userId, WebSocketEvent.CONVERSATION_UPDATED, {
-        id: conversationId,
-      });
+      if (newlyAddedMemberIds.has(member.userId)) {
+        // 新加入的成员：发送NEW_CONVERSATION事件，让会话出现在他们的聊天列表中
+        websocketService.sendMessageToUser(member.userId, WebSocketEvent.NEW_CONVERSATION, {
+          id: conversationId,
+          type: conversationInfo?.type || 'group',
+        });
+      } else {
+        // 现有成员：发送CONVERSATION_UPDATED事件
+        websocketService.sendMessageToUser(member.userId, WebSocketEvent.CONVERSATION_UPDATED, {
+          id: conversationId,
+        });
+      }
     });
   }
 
