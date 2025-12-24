@@ -1,10 +1,8 @@
-import { Repository, IsNull } from "typeorm";
 import { Conversation, ConversationType, MessageSendPermission, MemberAddPermission } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
-import { Message, MessageType } from "../models/Message.entity";
+import { Message } from "../models/Message.entity";
 import { MessageStatus, DeliveryStatus } from "../models/MessageStatus.entity";
-import { User } from "../models/User.entity";
-import { Friend, FriendStatus } from "../models/Friend.entity";
+import { Repository, IsNull } from "typeorm";
 import { AppDataSource } from "../config/database";
 import {
   NotFoundError,
@@ -12,13 +10,10 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { ConversationListItem } from "../types/conversation.types";
-import websocketService from "./websocket.service";
-import { WebSocketEvent } from "../constants/websocket-events";
-import { PrivacyUtil } from "../utils/privacy.util";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
-import { PermissionChecker } from "../utils/permission-checker.util";
-import { SystemMessageCreator } from "../utils/system-message-creator.util";
 import conversationCoreService from "./conversation-core.service";
+import groupService from "./group.service";
+import conversationPermissionService from "./conversation-permission.service";
 
 /**
  * 对话服务
@@ -28,10 +23,6 @@ export class ConversationService {
   private conversationUserRepository: Repository<ConversationUser>;
   private messageRepository: Repository<Message>;
   private messageStatusRepository: Repository<MessageStatus>;
-  private userRepository: Repository<User>;
-  private friendRepository: Repository<Friend>;
-  private permissionChecker: PermissionChecker;
-  private systemMessageCreator: SystemMessageCreator;
 
   constructor() {
     this.conversationRepository = AppDataSource.getRepository(Conversation);
@@ -39,34 +30,6 @@ export class ConversationService {
       AppDataSource.getRepository(ConversationUser);
     this.messageRepository = AppDataSource.getRepository(Message);
     this.messageStatusRepository = AppDataSource.getRepository(MessageStatus);
-    this.userRepository = AppDataSource.getRepository(User);
-    this.friendRepository = AppDataSource.getRepository(Friend);
-    this.permissionChecker = new PermissionChecker(
-      this.conversationRepository,
-      this.conversationUserRepository
-    );
-    this.systemMessageCreator = new SystemMessageCreator(
-      this.messageRepository,
-      this.conversationUserRepository
-    );
-  }
-
-  /**
-   * 创建系统消息
-   * 使用 SystemMessageCreator 工具类以消除重复代码
-   */
-  private async createSystemMessage(
-    conversationId: string,
-    content: string,
-    senderId: string = "system",
-    excludeUserId?: string
-  ): Promise<Message> {
-    return this.systemMessageCreator.createSystemMessage(
-      conversationId,
-      content,
-      senderId,
-      excludeUserId
-    );
   }
 
   /**
@@ -296,41 +259,11 @@ export class ConversationService {
   }
 
   /**
-   * 获取群聊成员列表 - 优化版，使用eager loading减少查询
+   * 获取群聊成员列表
+   * 委托给 GroupService 处理
    */
   public async getGroupMembers(conversationId: string, userId: string) {
-    // 验证会话是否存在
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 检查用户是否为成员
-    const userMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!userMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    // 获取所有成员 - 使用QueryBuilder进行eager loading和排序
-    const members = await this.conversationUserRepository
-      .createQueryBuilder("cu")
-      .leftJoinAndSelect("cu.user", "user")
-      .leftJoinAndSelect("user.profile", "profile")
-      .where("cu.conversationId = :conversationId", { conversationId })
-      .andWhere("cu.deletedAt IS NULL")
-      .orderBy("cu.role", "DESC")
-      .addOrderBy("cu.joinedAt", "ASC")
-      .getMany();
+    const members = await groupService.getGroupMembers(conversationId, userId);
 
     return members.map((member) => ({
       userId: member.userId,
@@ -344,82 +277,19 @@ export class ConversationService {
 
   /**
    * 添加成员到群聊
+   * 委托给 GroupService 处理
    */
   public async addGroupMembers(
     conversationId: string,
     requesterId: string,
     memberIds: string[]
   ) {
-    // 验证会话是否存在
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 检查请求者是否有权限添加成员
-    const canAdd = await this.canAddMember(conversationId, requesterId);
-    if (!canAdd) {
-      throw new ForbiddenError("您没有向此群组添加成员的权限");
-    }
-
-    // 获取邀请者信息
-    const requester = await this.userRepository.findOne({ where: { id: requesterId } });
-
-    // 添加每个成员
-    const addedMembers: string[] = [];
-    for (const memberId of memberIds) {
-      // 检查用户是否存在
-      const user = await this.userRepository.findOne({
-        where: { id: memberId },
-      });
-
-      if (!user) {
-        throw new NotFoundError(`User ${memberId} not found`);
-      }
-
-      // 检查是否已是成员
-      const existingMember = await this.conversationUserRepository.findOne({
-        where: { conversationId, userId: memberId },
-      });
-
-      if (existingMember) {
-        // 如果之前已删除，则恢复成员资格
-        if (existingMember.deletedAt) {
-          existingMember.deletedAt = null;
-          existingMember.hiddenUntil = null;
-          await this.conversationUserRepository.save(existingMember);
-        }
-        continue;
-      }
-
-      // 创建新成员
-      const newMember = this.conversationUserRepository.create({
-        conversationId,
-        userId: memberId,
-        role: MemberRole.MEMBER,
-      });
-
-      await this.conversationUserRepository.save(newMember);
-      addedMembers.push(user.username);
-    }
-
-    // 创建系统消息：邀请成员加入
-    if (addedMembers.length > 0) {
-      const memberNames = addedMembers.join("、");
-      const systemMessageContent = `${requester?.username || "用户"} 邀请 ${memberNames} 加入群聊`;
-      await this.createSystemMessage(conversationId, systemMessageContent, requesterId);
-    }
+    return groupService.addGroupMembers(conversationId, requesterId, memberIds);
   }
 
   /**
    * 更新成员角色
+   * 委托给 GroupService 处理
    */
   public async updateMemberRole(
     conversationId: string,
@@ -427,143 +297,19 @@ export class ConversationService {
     targetUserId: string,
     newRole: MemberRole
   ) {
-    // 验证会话是否存在
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 检查请求者是否为群主
-    const requesterMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: requesterId, deletedAt: IsNull() },
-    });
-
-    if (!requesterMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    if (requesterMembership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以更改成员角色");
-    }
-
-    // 不能更改自己的角色
-    if (requesterId === targetUserId) {
-      throw new ValidationError("无法更改自己的角色");
-    }
-
-    // 获取目标成员
-    const targetMember = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: targetUserId, deletedAt: IsNull() },
-    });
-
-    if (!targetMember) {
-      throw new NotFoundError("成员未找到");
-    }
-
-    // 不能更改群主角色
-    if (targetMember.role === MemberRole.OWNER) {
-      throw new ValidationError("无法更改群主的角色");
-    }
-
-    // 只允许设置为管理员或普通成员
-    if (newRole !== MemberRole.ADMIN && newRole !== MemberRole.MEMBER) {
-      throw new ValidationError("只能设置角色为管理员或普通成员");
-    }
-
-    targetMember.role = newRole;
-    await this.conversationUserRepository.save(targetMember);
-
-    // 获取操作者和目标用户的用户名
-    const [requesterUser, targetUser] = await Promise.all([
-      this.userRepository.findOne({ where: { id: requesterId } }),
-      this.userRepository.findOne({ where: { id: targetUserId } }),
-    ]);
-
-    // 创建系统消息：角色变更
-    const roleText = newRole === MemberRole.ADMIN ? "管理员" : "普通成员";
-    const systemMessageContent = `${requesterUser?.username || "用户"} 将 ${targetUser?.username || "用户"} 设置为${roleText}`;
-    await this.createSystemMessage(conversationId, systemMessageContent, requesterId);
+    return groupService.updateMemberRole(conversationId, requesterId, targetUserId, newRole);
   }
 
   /**
    * 从群聊中移除成员
+   * 委托给 GroupService 处理
    */
   public async removeGroupMember(
     conversationId: string,
     requesterId: string,
     targetUserId: string
   ) {
-    // 验证会话是否存在
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 检查请求者是否为管理员或群主
-    const requesterMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: requesterId, deletedAt: IsNull() },
-    });
-
-    if (!requesterMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    if (
-      requesterMembership.role !== MemberRole.ADMIN &&
-      requesterMembership.role !== MemberRole.OWNER
-    ) {
-      throw new ForbiddenError("只有管理员和群主可以移除成员");
-    }
-
-    // 获取目标成员
-    const targetMember = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: targetUserId, deletedAt: IsNull() },
-    });
-
-    if (!targetMember) {
-      throw new NotFoundError("成员未找到");
-    }
-
-    // 不能移除群主
-    if (targetMember.role === MemberRole.OWNER) {
-      throw new ValidationError("无法移除群主");
-    }
-
-    // 管理员只能移除普通成员
-    if (
-      requesterMembership.role === MemberRole.ADMIN &&
-      targetMember.role === MemberRole.ADMIN
-    ) {
-      throw new ForbiddenError("管理员无法移除其他管理员");
-    }
-
-    // 获取移除者和被移除者信息
-    const requester = await this.userRepository.findOne({ where: { id: requesterId } });
-    const targetUser = await this.userRepository.findOne({ where: { id: targetUserId } });
-
-    // 软删除成员资格
-    targetMember.deletedAt = new Date();
-    // 将hiddenUntil设置为遥远的未来日期，这样他们就看不到以前的消息
-    targetMember.hiddenUntil = new Date(SPECIAL_DATES.FAR_FUTURE_DATE);
-    await this.conversationUserRepository.save(targetMember);
-
-    // 创建系统消息：移除成员（排除被移除的用户）
-    const systemMessageContent = `${requester?.username || "用户"} 将 ${targetUser?.username || "用户"} 移出了群聊`;
-    await this.createSystemMessage(conversationId, systemMessageContent, requesterId, targetUserId);
+    return groupService.removeGroupMember(conversationId, requesterId, targetUserId);
   }
 
   /**
@@ -730,313 +476,94 @@ export class ConversationService {
 
   /**
    * 更新群组消息发送权限
+   * 委托给 ConversationPermissionService 处理
    */
   public async updateMessageSendPermission(
     conversationId: string,
     userId: string,
     permission: MessageSendPermission
   ): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 只有群主可以更改权限
-    const requesterMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!requesterMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    if (requesterMembership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以更改消息发送权限");
-    }
-
-    conversation.messageSendPermission = permission;
-    await this.conversationRepository.save(conversation);
-
-    return conversation;
+    return conversationPermissionService.updateMessageSendPermission(conversationId, userId, permission);
   }
 
   /**
    * 更新群组成员添加权限
+   * 委托给 ConversationPermissionService 处理
    */
   public async updateMemberAddPermission(
     conversationId: string,
     userId: string,
     permission: MemberAddPermission
   ): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 只有群主可以更改权限
-    const requesterMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!requesterMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    if (requesterMembership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以更改成员添加权限");
-    }
-
-    conversation.memberAddPermission = permission;
-    await this.conversationRepository.save(conversation);
-
-    return conversation;
+    return conversationPermissionService.updateMemberAddPermission(conversationId, userId, permission);
   }
 
   /**
    * 更新群组入群验证设置
+   * 委托给 ConversationPermissionService 处理
    */
   public async updateRequireApproval(
     conversationId: string,
     userId: string,
     requireApproval: boolean
   ): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 只有群主可以更改权限
-    const requesterMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!requesterMembership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    if (requesterMembership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以更改入群验证设置");
-    }
-
-    conversation.requireApproval = requireApproval;
-    await this.conversationRepository.save(conversation);
-
-    return conversation;
+    return conversationPermissionService.updateRequireApproval(conversationId, userId, requireApproval);
   }
 
   /**
    * 退出群组
+   * 委托给 GroupService 处理
    */
   public async leaveGroup(
     conversationId: string,
     userId: string
   ): Promise<void> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    const membership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!membership) {
-      throw new ForbiddenError("您不是此群组的成员");
-    }
-
-    // 群主不能退出群组，必须先转让群主或解散群组
-    if (membership.role === MemberRole.OWNER) {
-      throw new ForbiddenError("群主无法退出。请先转让群主或解散群组。");
-    }
-
-    // 获取用户信息
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
-    // 软删除成员资格
-    membership.deletedAt = new Date();
-    await this.conversationUserRepository.save(membership);
-
-    // 创建系统消息：退出群聊（排除刚退出的用户）
-    const systemMessageContent = `${user?.username || "用户"} 退出了群聊`;
-    await this.createSystemMessage(conversationId, systemMessageContent, userId, userId);
-
-    // 通知退出的用户，让前端立即更新
-    websocketService.sendMessageToUser(userId, WebSocketEvent.MEMBER_LEFT_GROUP, {
-      conversationId,
-      userId,
-    });
+    return groupService.leaveGroup(conversationId, userId);
   }
 
   /**
    * 转让群主
+   * 委托给 GroupService 处理
    */
   public async transferOwnership(
     conversationId: string,
     currentOwnerId: string,
     newOwnerId: string
   ): Promise<void> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 验证当前用户是群主
-    const currentOwnerMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: currentOwnerId, deletedAt: IsNull() },
-    });
-
-    if (!currentOwnerMembership || currentOwnerMembership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以转让群主");
-    }
-
-    // 验证新群主是成员
-    const newOwnerMembership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId: newOwnerId, deletedAt: IsNull() },
-    });
-
-    if (!newOwnerMembership) {
-      throw new NotFoundError("新群主不是此群组的成员");
-    }
-
-    // 转让群主
-    currentOwnerMembership.role = MemberRole.ADMIN;
-    newOwnerMembership.role = MemberRole.OWNER;
-
-    await this.conversationUserRepository.save([currentOwnerMembership, newOwnerMembership]);
+    return groupService.transferOwnership(conversationId, currentOwnerId, newOwnerId);
   }
 
   /**
    * 解散群组
+   * 委托给 GroupService 处理
    */
   public async disbandGroup(
     conversationId: string,
     userId: string
   ): Promise<void> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      throw new ValidationError("这不是群组会话");
-    }
-
-    // 只有群主可以解散群组
-    const membership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!membership || membership.role !== MemberRole.OWNER) {
-      throw new ForbiddenError("只有群主可以解散群组");
-    }
-
-    // 获取用户信息以创建系统消息
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-    });
-    const userName = user?.username || "群主";
-
-    // 将会话标记为已解散而不是删除成员
-    // 这样可以让群组对所有成员可见并保留消息历史
-    // 但阻止任何人发送新消息
-    conversation.disbandedAt = new Date();
-    await this.conversationRepository.save(conversation);
-
-    // 创建系统消息通知所有成员
-    const systemMessage = this.messageRepository.create({
-      conversationId,
-      senderId: userId,
-      type: MessageType.SYSTEM,
-      content: `${userName} 解散了该群组`,
-    });
-    await this.messageRepository.save(systemMessage);
-
-    // 获取所有活跃成员以发送WebSocket通知
-    const members = await this.conversationUserRepository.find({
-      where: { conversationId, deletedAt: IsNull() },
-    });
-
-    // 向所有成员发送WebSocket事件
-    members.forEach((member) => {
-      // 发送系统消息
-      websocketService.sendMessageToUser(member.userId, WebSocketEvent.NEW_MESSAGE, {
-        id: systemMessage.id,
-        conversationId: systemMessage.conversationId,
-        senderId: systemMessage.senderId,
-        type: systemMessage.type,
-        content: systemMessage.content,
-        createdAt: systemMessage.createdAt.toISOString(),
-        editedAt: null,
-        replyToMessageId: null,
-      });
-
-      // 发送群组解散事件以更新聊天存储
-      websocketService.sendMessageToUser(member.userId, WebSocketEvent.GROUP_DISBANDED, {
-        conversationId,
-        disbandedAt: conversation.disbandedAt,
-        disbandedBy: userId,
-      });
-    });
+    return groupService.disbandGroup(conversationId, userId);
   }
 
   /**
    * 检查用户是否有发送消息的权限
-   * 使用 PermissionChecker 工具类以消除重复代码
+   * 委托给 ConversationPermissionService 处理
    */
   public async canSendMessage(
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    return this.permissionChecker.canSendMessage(conversationId, userId);
+    return conversationPermissionService.canSendMessage(conversationId, userId);
   }
 
   /**
    * 检查用户是否有添加成员的权限
-   * 使用 PermissionChecker 工具类以消除重复代码
+   * 委托给 ConversationPermissionService 处理
    */
   public async canAddMember(
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    return this.permissionChecker.canAddMember(conversationId, userId);
+    return conversationPermissionService.canAddMember(conversationId, userId);
   }
 }
 
