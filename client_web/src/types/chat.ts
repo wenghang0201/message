@@ -12,6 +12,7 @@ export interface Chat {
   pinnedAt?: number      // 聊天置顶时间
   mutedUntil?: number    // 聊天静音过期时间（时间戳）
   disbandedAt?: number   // 群组解散时间（时间戳）
+  leftAt?: number        // 用户离开或被移除的时间（时间戳）
   isOnline?: boolean     // 用户是否在线（仅限单聊）
   lastSeenAt?: number    // 用户最后在线时间（仅限单聊）
   createdAt: number

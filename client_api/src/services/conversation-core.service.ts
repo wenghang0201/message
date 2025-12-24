@@ -173,6 +173,7 @@ export class ConversationCoreService {
         pinnedAt: cu.pinnedAt,
         mutedUntil: cu.mutedUntil,
         disbandedAt: conversation.disbandedAt,
+        leftAt: cu.deletedAt, // 用户离开或被移除的时间
         isOnline,
         lastSeenAt,
         createdAt: conversation.createdAt,

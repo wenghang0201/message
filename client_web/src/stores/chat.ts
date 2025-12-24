@@ -62,6 +62,7 @@ export const useChatStore = defineStore('chat', () => {
       pinnedAt: item.pinnedAt ? new Date(item.pinnedAt).getTime() : undefined,
       mutedUntil: item.mutedUntil ? new Date(item.mutedUntil).getTime() : undefined,
       disbandedAt: item.disbandedAt ? new Date(item.disbandedAt).getTime() : undefined,
+      leftAt: item.leftAt ? new Date(item.leftAt).getTime() : undefined,
       isOnline: item.isOnline,
       lastSeenAt: item.lastSeenAt ? new Date(item.lastSeenAt).getTime() : undefined,
       createdAt: new Date(item.createdAt).getTime(),

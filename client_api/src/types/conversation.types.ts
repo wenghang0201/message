@@ -16,6 +16,7 @@ export interface ConversationListItem {
   pinnedAt?: Date | null;
   mutedUntil?: Date | null;
   disbandedAt?: Date | null;
+  leftAt?: Date | null; // 用户离开或被移除的时间
   isOnline?: boolean;
   lastSeenAt?: Date | null;
   createdAt: Date;

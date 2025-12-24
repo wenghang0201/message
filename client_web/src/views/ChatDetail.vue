@@ -234,6 +234,10 @@ const canInteract = computed(() => {
   if (currentChat.value?.disbandedAt) {
     return false
   }
+  // 检查用户是否已离开或被移除
+  if (currentChat.value?.leftAt) {
+    return false
+  }
   // 如果对话存在于列表中，说明用户是成员，可以发送消息
   return true
 })

@@ -63,6 +63,7 @@ export interface ConversationListItem {
   pinnedAt?: string | null;
   mutedUntil?: string | null;
   disbandedAt?: string | null;
+  leftAt?: string | null;
   isOnline?: boolean;
   lastSeenAt?: string | null;
   createdAt: string;
