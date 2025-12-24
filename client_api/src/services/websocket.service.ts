@@ -181,6 +181,26 @@ class WebSocketService {
   }
 
   /**
+   * 强制用户离开会话房间（用于被移除/踢出群组）
+   */
+  public forceLeaveConversation(userId: string, conversationId: string): void {
+    if (!this.io) {
+      Log.warn('WebSocket服务器未初始化');
+      return;
+    }
+
+    const userSocketIds = this.userSockets.get(userId);
+    if (userSocketIds) {
+      userSocketIds.forEach(socketId => {
+        const socket = this.io!.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(`conversation:${conversationId}`);
+        }
+      });
+    }
+  }
+
+  /**
    * 获取在线用户数
    */
   public getOnlineUsersCount(): number {

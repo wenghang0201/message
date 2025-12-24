@@ -275,6 +275,9 @@ export class GroupService {
     membership.deletedAt = new Date();
     await this.conversationUserRepository.save(membership);
 
+    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
+    websocketService.forceLeaveConversation(userId, conversationId);
+
     // 创建系统消息
     const user = await this.userRepository.findOne({ where: { id: userId } });
     const systemMessageContent = `${user?.username || "用户"} 离开了群聊`;
@@ -439,6 +442,9 @@ export class GroupService {
     // 用户可以看到历史消息，但不能发送新消息
     targetMembership.deletedAt = new Date();
     await this.conversationUserRepository.save(targetMembership);
+
+    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
+    websocketService.forceLeaveConversation(targetUserId, conversationId);
 
     // 创建系统消息
     const requesterUser = await this.userRepository.findOne({
@@ -609,9 +615,12 @@ export class GroupService {
       userId
     );
 
-    // 通知所有成员
+    // 通知所有成员并强制离开 WebSocket 会话房间
     const memberIds = allMembers.map(m => m.userId);
     memberIds.forEach(memberId => {
+      // 强制用户离开 WebSocket 会话房间（群组已解散，无需继续接收消息）
+      websocketService.forceLeaveConversation(memberId, conversationId);
+
       // 发送群组解散事件
       websocketService.sendMessageToUser(memberId, WebSocketEvent.GROUP_DISBANDED, {
         conversationId,
