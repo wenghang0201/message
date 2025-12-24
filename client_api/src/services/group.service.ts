@@ -596,14 +596,14 @@ export class GroupService {
     conversation.disbandedAt = new Date();
     await this.conversationRepository.save(conversation);
 
-    // 软删除所有成员记录（设置为未来日期以保留历史）
+    // 软删除所有成员记录（设置为MySQL最大时间戳以保留历史）
     const allMembers = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
     });
 
-    const farFutureDate = new Date(SPECIAL_DATES.FAR_FUTURE_DATE);
+    const maxTimestamp = new Date(SPECIAL_DATES.MYSQL_TIMESTAMP_MAX);
     allMembers.forEach(member => {
-      member.deletedAt = farFutureDate;
+      member.deletedAt = maxTimestamp;
     });
 
     await this.conversationUserRepository.save(allMembers);
