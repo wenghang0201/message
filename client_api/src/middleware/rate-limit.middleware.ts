@@ -7,7 +7,7 @@ import Log from "../utils/log.util";
  */
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟
-  max: 5, // 每个IP每15分钟最多5次请求
+  max: 20, // 每个IP每15分钟最多20次请求（放宽限制，适应开发测试）
   message: {
     success: false,
     error: {
@@ -62,8 +62,8 @@ export const passwordChangeRateLimiter = rateLimit({
  * 防止API滥用
  */
 export const apiRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分钟
-  max: 100, // 每个IP每15分钟最多100次请求
+  windowMs: 1 * 60 * 1000, // 1分钟（缩短窗口时间以适应实时应用）
+  max: 300, // 每个IP每分钟最多300次请求（大幅提高限制，约5 req/s）
   message: {
     success: false,
     error: {
@@ -78,9 +78,11 @@ export const apiRateLimiter = rateLimit({
     if (req.headers.upgrade === "websocket") {
       return true;
     }
-    // 跳过高频读取操作（标记已读、获取消息等）
+    // 跳过高频读取操作（标记已读、获取消息、获取会话列表等）
     const highFrequencyPaths = [
       /\/conversations\/[^/]+\/read$/,
+      /\/conversations\/[^/]+\/messages$/,
+      /\/conversations$/,
       /\/messages$/,
     ];
     return highFrequencyPaths.some(pattern => pattern.test(req.path));
@@ -93,7 +95,7 @@ export const apiRateLimiter = rateLimit({
  */
 export const readOperationsRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1分钟
-  max: 60, // 每个IP每分钟最多60次请求
+  max: 200, // 每个IP每分钟最多200次请求（大幅提高限制，适应实时消息应用）
   message: {
     success: false,
     error: {
