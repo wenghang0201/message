@@ -137,7 +137,7 @@ export class GroupService {
       throw new NotFoundError("一个或多个用户未找到");
     }
 
-    // 检查是否已经是成员
+    // 检查现有成员（包括已删除的）
     const existingMembers = await this.conversationUserRepository.find({
       where: {
         conversationId,
@@ -145,34 +145,60 @@ export class GroupService {
       },
     });
 
-    const existingMemberIds = new Set(
-      existingMembers
-        .filter(m => m.deletedAt === null)
-        .map(m => m.userId)
-    );
+    // 分类现有成员
+    const activeMemberIds = new Set<string>();
+    const softDeletedMembers: ConversationUser[] = [];
+    const existingMemberMap = new Map<string, ConversationUser>();
 
-    const newMemberIds = memberIds.filter(id => !existingMemberIds.has(id));
+    existingMembers.forEach(member => {
+      existingMemberMap.set(member.userId, member);
+      if (member.deletedAt === null) {
+        activeMemberIds.add(member.userId);
+      } else {
+        softDeletedMembers.push(member);
+      }
+    });
 
-    if (newMemberIds.length === 0) {
-      throw new ValidationError("所有用户已经是群组成员");
+    // 检查是否所有用户都已经是活跃成员
+    const alreadyActiveIds = memberIds.filter(id => activeMemberIds.has(id));
+    if (alreadyActiveIds.length > 0) {
+      throw new ValidationError("一个或多个用户已经是群组成员");
     }
 
-    // 添加新成员
-    const newMembers = newMemberIds.map(memberId =>
-      this.conversationUserRepository.create({
-        conversationId,
-        userId: memberId,
-        role: MemberRole.MEMBER,
-      })
-    );
+    // 恢复被软删除的成员
+    const membersToRestore = memberIds
+      .filter(id => existingMemberMap.has(id) && existingMemberMap.get(id)!.deletedAt !== null)
+      .map(id => existingMemberMap.get(id)!);
 
-    await this.conversationUserRepository.save(newMembers);
+    if (membersToRestore.length > 0) {
+      membersToRestore.forEach(member => {
+        member.deletedAt = null;
+        member.role = MemberRole.MEMBER; // 重新加入时恢复为普通成员
+      });
+      await this.conversationUserRepository.save(membersToRestore);
+    }
+
+    // 创建新成员记录
+    const newMemberIds = memberIds.filter(id => !existingMemberMap.has(id));
+    if (newMemberIds.length > 0) {
+      const newMembers = newMemberIds.map(memberId =>
+        this.conversationUserRepository.create({
+          conversationId,
+          userId: memberId,
+          role: MemberRole.MEMBER,
+        })
+      );
+      await this.conversationUserRepository.save(newMembers);
+    }
 
     // 创建系统消息
     const requesterUser = await this.userRepository.findOne({
       where: { id: requesterId },
     });
-    const addedUsers = users.filter(u => newMemberIds.includes(u.id));
+
+    // 所有被添加的用户（包括恢复的和新加入的）
+    const allAddedUserIds = [...memberIds];
+    const addedUsers = users.filter(u => allAddedUserIds.includes(u.id));
     const memberNames = addedUsers.map(u => u.username).join("、");
 
     const systemMessageContent = `${requesterUser?.username || "用户"} 邀请 ${memberNames} 加入群聊`;
