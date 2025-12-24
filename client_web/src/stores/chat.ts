@@ -19,6 +19,12 @@ export const useChatStore = defineStore('chat', () => {
     await fetchConversations()
   })
 
+  // 监听会话更新事件（新成员加入、成员离开、群组解散等）
+  websocketService.onConversationUpdated(async () => {
+    // 刷新聊天列表以显示最新消息
+    await fetchConversations()
+  })
+
   // 监听会话删除事件（用户离开群组）
   websocketService.onConversationDeleted((data) => {
     // 从列表中移除该会话

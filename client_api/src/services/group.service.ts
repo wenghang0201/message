@@ -623,8 +623,14 @@ export class GroupService {
     // 通知所有成员
     const memberIds = allMembers.map(m => m.userId);
     memberIds.forEach(memberId => {
+      // 发送群组解散事件
       websocketService.sendMessageToUser(memberId, WebSocketEvent.GROUP_DISBANDED, {
         conversationId,
+        disbandedAt: conversation.disbandedAt,
+      });
+      // 发送会话更新事件以显示系统消息
+      websocketService.sendMessageToUser(memberId, WebSocketEvent.CONVERSATION_UPDATED, {
+        id: conversationId,
       });
     });
   }
