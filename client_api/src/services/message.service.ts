@@ -162,9 +162,9 @@ export class MessageService {
     page: number = 1,
     limit: number = MESSAGE_LIMITS.DEFAULT_PAGE_SIZE
   ): Promise<{ messages: Message[]; total: number; hasMore: boolean }> {
-    // 验证用户是否是对话的活跃成员（排除已退出的成员）
+    // 验证用户是否是对话成员（允许已移除的成员查看历史消息）
     const member = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
+      where: { conversationId, userId },
     });
 
     if (!member) {
@@ -183,6 +183,13 @@ export class MessageService {
     if (member.hiddenUntil) {
       queryBuilder.andWhere("message.createdAt > :hiddenUntil", {
         hiddenUntil: member.hiddenUntil,
+      });
+    }
+
+    // 如果用户已被移除（deletedAt不为空），只显示移除之前的消息
+    if (member.deletedAt) {
+      queryBuilder.andWhere("message.createdAt <= :deletedAt", {
+        deletedAt: member.deletedAt,
       });
     }
 
