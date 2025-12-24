@@ -91,3 +91,23 @@ export function getRelativeTime(timestamp: number): string {
 
   return formatFullDateTime(timestamp)
 }
+
+/**
+ * 格式化最后在线时间
+ * 从 ChatListItem 和 ChatDetail 提取的公共逻辑
+ */
+export function formatLastSeen(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚在线'
+  if (minutes < 60) return `${minutes}分钟前在线`
+  if (hours < 24) return `${hours}小时前在线`
+  if (days < 7) return `${days}天前在线`
+
+  const date = new Date(timestamp)
+  return `${date.getMonth() + 1}月${date.getDate()}日在线`
+}
