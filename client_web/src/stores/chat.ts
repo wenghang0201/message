@@ -13,12 +13,6 @@ export const useChatStore = defineStore('chat', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
-  // 监听成员退出群组事件
-  websocketService.onMemberLeftGroup((data) => {
-    // 从列表中移除该群聊
-    deleteChat(data.conversationId)
-  })
-
   // 监听新会话创建事件
   websocketService.onNewConversation(async () => {
     // 刷新聊天列表以显示新会话

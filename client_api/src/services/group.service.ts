@@ -287,7 +287,12 @@ export class GroupService {
       userId // 排除离开的用户
     );
 
-    // 通知其他成员
+    // Send CONVERSATION_DELETED event to the leaving user
+    websocketService.sendMessageToUser(userId, WebSocketEvent.CONVERSATION_DELETED, {
+      conversationId,
+    });
+
+    // Send CONVERSATION_UPDATED event to remaining members
     const remainingMembers = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
       select: ["userId"],
@@ -295,9 +300,8 @@ export class GroupService {
 
     remainingMembers.forEach(member => {
       if (member.userId !== userId) {
-        websocketService.sendMessageToUser(member.userId, WebSocketEvent.MEMBER_LEFT_GROUP, {
-          conversationId,
-          userId,
+        websocketService.sendMessageToUser(member.userId, WebSocketEvent.CONVERSATION_UPDATED, {
+          id: conversationId,
         });
       }
     });
