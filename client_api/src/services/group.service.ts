@@ -271,14 +271,7 @@ export class GroupService {
       throw new ValidationError("群主必须先转让群主身份才能离开群组");
     }
 
-    // 软删除成员记录
-    membership.deletedAt = new Date();
-    await this.conversationUserRepository.save(membership);
-
-    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
-    websocketService.forceLeaveConversation(userId, conversationId);
-
-    // 创建系统消息
+    // 创建系统消息（在设置 deletedAt 之前）
     const user = await this.userRepository.findOne({ where: { id: userId } });
     const systemMessageContent = `${user?.username || "用户"} 离开了群聊`;
 
@@ -288,6 +281,13 @@ export class GroupService {
       userId,
       userId // 排除离开的用户
     );
+
+    // 软删除成员记录（在系统消息创建之后）
+    membership.deletedAt = new Date();
+    await this.conversationUserRepository.save(membership);
+
+    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
+    websocketService.forceLeaveConversation(userId, conversationId);
 
     // 通知离开的用户删除会话
     websocketService.sendMessageToUser(userId, WebSocketEvent.CONVERSATION_DELETED, {
@@ -438,15 +438,7 @@ export class GroupService {
       throw new ForbiddenError("管理员不能移除其他管理员");
     }
 
-    // 标记成员移除时间（使用 deletedAt，但会话仍可见）
-    // 用户可以看到历史消息，但不能发送新消息
-    targetMembership.deletedAt = new Date();
-    await this.conversationUserRepository.save(targetMembership);
-
-    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
-    websocketService.forceLeaveConversation(targetUserId, conversationId);
-
-    // 创建系统消息
+    // 创建系统消息（在设置 deletedAt 之前，确保被移除的用户能看到系统消息）
     const requesterUser = await this.userRepository.findOne({
       where: { id: requesterId },
     });
@@ -461,6 +453,14 @@ export class GroupService {
       systemMessageContent,
       requesterId
     );
+
+    // 标记成员移除时间（在系统消息创建之后，确保系统消息的时间戳早于 deletedAt）
+    // 用户可以看到历史消息（包括移除消息），但不能发送新消息
+    targetMembership.deletedAt = new Date();
+    await this.conversationUserRepository.save(targetMembership);
+
+    // 强制用户离开 WebSocket 会话房间（防止继续接收实时消息）
+    websocketService.forceLeaveConversation(targetUserId, conversationId);
 
     // 获取所有活跃成员
     const members = await this.conversationUserRepository.find({
