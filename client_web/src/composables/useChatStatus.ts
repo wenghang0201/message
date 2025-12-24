@@ -7,7 +7,7 @@
 
 import { computed, type Ref } from 'vue'
 import type { Chat } from '@/types/chat'
-import { formatLastSeen } from '@/utils/dateFormat'
+import { formatLastSeen } from '@/utils/date-format'
 
 export function useChatStatus(chat: Ref<Chat | undefined>) {
   /**

@@ -4,7 +4,7 @@
  */
 
 import type { Chat } from '@/types/chat'
-import { UI_LIMITS } from '@/constants/uiLimits'
+import { UI_LIMITS } from '@/constants/ui-limits'
 
 /**
  * 判断是否为单聊

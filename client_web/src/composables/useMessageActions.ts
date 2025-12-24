@@ -7,7 +7,7 @@
 
 import { computed, type Ref } from 'vue'
 import type { Message } from '@/types/message'
-import { TIME_CONSTANTS } from '@/constants/uiLimits'
+import { TIME_CONSTANTS } from '@/constants/ui-limits'
 
 interface MessageAction {
   name: string

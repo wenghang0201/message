@@ -80,9 +80,9 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Chat } from '@/types/chat'
-import { formatChatTime, formatLastSeen } from '@/utils/dateFormat'
-import { getMessagePreview as getMessagePreviewUtil } from '@/utils/messageFormatter'
-import { formatUnreadCount, isChatMuted } from '@/utils/chatHelper'
+import { formatChatTime, formatLastSeen } from '@/utils/date-format'
+import { getMessagePreview as getMessagePreviewUtil } from '@/utils/message-formatter'
+import { formatUnreadCount, isChatMuted } from '@/utils/chat-helper'
 import Avatar from '@/components/common/Avatar.vue'
 
 interface Props {

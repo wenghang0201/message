@@ -180,8 +180,8 @@ import { showToast } from 'vant'
 import type { RecordingState } from '@/types/voice'
 import type { Message } from '@/types/message'
 import { useWaveSurfer } from '@/composables/useWaveSurfer'
-import { getMessagePreview } from '@/utils/messageFormatter'
-import { TIME_CONSTANTS } from '@/constants/uiLimits'
+import { getMessagePreview } from '@/utils/message-formatter'
+import { TIME_CONSTANTS } from '@/constants/ui-limits'
 
 interface Props {
   editingMessage?: Message | null
