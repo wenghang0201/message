@@ -16,6 +16,7 @@ import websocketService from "./websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 import { PrivacyUtil } from "../utils/privacy.util";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
+import { PermissionChecker } from "../utils/permission-checker.util";
 
 /**
  * 对话服务
@@ -27,6 +28,7 @@ export class ConversationService {
   private messageStatusRepository: Repository<MessageStatus>;
   private userRepository: Repository<User>;
   private friendRepository: Repository<Friend>;
+  private permissionChecker: PermissionChecker;
 
   constructor() {
     this.conversationRepository = AppDataSource.getRepository(Conversation);
@@ -36,6 +38,10 @@ export class ConversationService {
     this.messageStatusRepository = AppDataSource.getRepository(MessageStatus);
     this.userRepository = AppDataSource.getRepository(User);
     this.friendRepository = AppDataSource.getRepository(Friend);
+    this.permissionChecker = new PermissionChecker(
+      this.conversationRepository,
+      this.conversationUserRepository
+    );
   }
 
   /**
@@ -1347,88 +1353,24 @@ export class ConversationService {
 
   /**
    * 检查用户是否有发送消息的权限
+   * 使用 PermissionChecker 工具类以消除重复代码
    */
   public async canSendMessage(
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      return false;
-    }
-
-    // 检查群组是否已解散
-    if (conversation.disbandedAt) {
-      return false;
-    }
-
-    // 单聊总是允许发送
-    if (conversation.type === ConversationType.SINGLE) {
-      return true;
-    }
-
-    const membership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!membership) {
-      return false;
-    }
-
-    // 检查消息发送权限
-    switch (conversation.messageSendPermission) {
-      case MessageSendPermission.ALL_MEMBERS:
-        return true;
-      case MessageSendPermission.ADMIN_ONLY:
-        return membership.role === MemberRole.ADMIN || membership.role === MemberRole.OWNER;
-      case MessageSendPermission.OWNER_ONLY:
-        return membership.role === MemberRole.OWNER;
-      default:
-        return true;
-    }
+    return this.permissionChecker.canSendMessage(conversationId, userId);
   }
 
   /**
    * 检查用户是否有添加成员的权限
+   * 使用 PermissionChecker 工具类以消除重复代码
    */
   public async canAddMember(
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      return false;
-    }
-
-    if (conversation.type !== ConversationType.GROUP) {
-      return false;
-    }
-
-    const membership = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId, deletedAt: IsNull() },
-    });
-
-    if (!membership) {
-      return false;
-    }
-
-    // 检查成员添加权限
-    switch (conversation.memberAddPermission) {
-      case MemberAddPermission.ALL_MEMBERS:
-        return true;
-      case MemberAddPermission.ADMIN_ONLY:
-        return membership.role === MemberRole.ADMIN || membership.role === MemberRole.OWNER;
-      case MemberAddPermission.OWNER_ONLY:
-        return membership.role === MemberRole.OWNER;
-      default:
-        return membership.role === MemberRole.ADMIN || membership.role === MemberRole.OWNER;
-    }
+    return this.permissionChecker.canAddMember(conversationId, userId);
   }
 }
 
