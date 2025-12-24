@@ -18,6 +18,7 @@ import { PrivacyUtil } from "../utils/privacy.util";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
 import { PermissionChecker } from "../utils/permission-checker.util";
 import { SystemMessageCreator } from "../utils/system-message-creator.util";
+import conversationCoreService from "./conversation-core.service";
 
 /**
  * 对话服务
@@ -70,158 +71,17 @@ export class ConversationService {
 
   /**
    * 获取用户的所有对话列表（优化版 - 批量查询减少 N+1 问题）
+   * 委托给 ConversationCoreService 处理
    */
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    // 1. 获取用户参与的所有对话（排除已删除的）- 使用eager loading
-    const conversationUsers = await this.conversationUserRepository
-      .createQueryBuilder("cu")
-      .leftJoinAndSelect("cu.conversation", "conversation")
-      .where("cu.userId = :userId", { userId })
-      .andWhere("cu.deletedAt IS NULL")
-      .orderBy("conversation.updatedAt", "DESC")
-      .getMany();
-
-    if (conversationUsers.length === 0) {
-      return [];
-    }
-
-    const conversationIds = conversationUsers.map(cu => cu.conversation.id);
-
-    // 2. 批量获取所有对话的参与者（一次查询代替 N 次）- 使用eager loading
-    const allParticipants = await this.conversationUserRepository
-      .createQueryBuilder("cu")
-      .leftJoinAndSelect("cu.user", "user")
-      .leftJoinAndSelect("user.profile", "profile")
-      .where("cu.conversationId IN (:...conversationIds)", { conversationIds })
-      .getMany();
-
-    // 按对话 ID 分组参与者
-    const participantsByConversation = new Map<string, ConversationUser[]>();
-    allParticipants.forEach(participant => {
-      const conversationId = participant.conversationId;
-      if (!participantsByConversation.has(conversationId)) {
-        participantsByConversation.set(conversationId, []);
-      }
-      participantsByConversation.get(conversationId)!.push(participant);
-    });
-
-    // 3. 批量获取最后一条消息（一次查询代替 N 次）
-    // 注意：需要考虑每个用户的 hiddenUntil
-    const lastMessages = await this.messageRepository
-      .createQueryBuilder("message")
-      .where("message.conversationId IN (:...conversationIds)", { conversationIds })
-      .andWhere("message.deletedAt IS NULL")
-      .andWhere((qb) => {
-        const subQuery = qb
-          .subQuery()
-          .select("MAX(m2.createdAt)")
-          .from(Message, "m2")
-          .where("m2.conversationId = message.conversationId")
-          .andWhere("m2.deletedAt IS NULL")
-          .getQuery();
-        return `message.createdAt = ${subQuery}`;
-      })
-      .getMany();
-
-    // 按对话 ID 映射最后消息
-    const lastMessageByConversation = new Map<string, Message>();
-    lastMessages.forEach(msg => {
-      lastMessageByConversation.set(msg.conversationId, msg);
-    });
-
-    // 4. 构建对话列表
-    const conversations: ConversationListItem[] = [];
-
-    for (const cu of conversationUsers) {
-      const conversation = cu.conversation;
-
-      let name = conversation.name || "";
-      let avatar = conversation.avatarUrl || null;
-      let otherUserId: string | undefined;
-      let isOnline: boolean | undefined;
-      let lastSeenAt: Date | null | undefined;
-
-      // 单聊：从已加载的参与者中获取对方用户信息
-      if (conversation.type === ConversationType.SINGLE) {
-        const participants = participantsByConversation.get(conversation.id) || [];
-        const otherParticipant = participants.find(p => p.userId !== userId);
-
-        if (otherParticipant?.user) {
-          otherUserId = otherParticipant.userId;
-          name = otherParticipant.user.username;
-          avatar = otherParticipant.user.profile?.avatarUrl || null;
-
-          // 检查当前用户是否有权查看对方的在线状态
-          const canSeeStatus = await PrivacyUtil.canSeeLastSeen(userId, otherParticipant.userId);
-
-          if (canSeeStatus) {
-            isOnline = otherParticipant.user.profile?.isOnline || false;
-            lastSeenAt = otherParticipant.user.profile?.lastSeenAt || null;
-          } else {
-            // 没有权限，不返回在线状态
-            isOnline = undefined;
-            lastSeenAt = undefined;
-          }
-        }
-      }
-
-      // 获取最后一条消息（从已加载的映射中获取）
-      let lastMessage = lastMessageByConversation.get(conversation.id) || null;
-
-      // 如果用户有 hiddenUntil，需要过滤掉该时间之前的消息
-      if (lastMessage && cu.hiddenUntil && lastMessage.createdAt <= cu.hiddenUntil) {
-        // 需要重新查询该时间之后的最后一条消息
-        const filteredMessage = await this.messageRepository
-          .createQueryBuilder("message")
-          .where("message.conversationId = :conversationId", { conversationId: conversation.id })
-          .andWhere("message.deletedAt IS NULL")
-          .andWhere("message.createdAt > :hiddenUntil", { hiddenUntil: cu.hiddenUntil })
-          .orderBy("message.createdAt", "DESC")
-          .getOne();
-        lastMessage = filteredMessage || null;
-      }
-
-      // 计算未读数（保持原有的位置计算逻辑）
-      const unreadCount = await this.getUnreadCount(conversation.id, userId);
-
-      const item: ConversationListItem = {
-        id: conversation.id,
-        type: conversation.type,
-        name,
-        avatar,
-        otherUserId,
-        unreadCount,
-        isPinned: cu.isPinned,
-        pinnedAt: cu.pinnedAt,
-        mutedUntil: cu.mutedUntil,
-        disbandedAt: conversation.disbandedAt,
-        isOnline,
-        lastSeenAt,
-        createdAt: conversation.createdAt,
-        updatedAt: conversation.updatedAt,
-      };
-
-      // 添加最后一条消息
-      if (lastMessage) {
-        item.lastMessage = {
-          id: lastMessage.id,
-          senderId: lastMessage.senderId,
-          content: lastMessage.content,
-          type: lastMessage.type,
-          createdAt: lastMessage.createdAt,
-        };
-      }
-
-      conversations.push(item);
-    }
-
-    return conversations;
+    return conversationCoreService.getUserConversations(userId);
   }
 
   /**
    * 创建群聊
+   * 委托给 ConversationCoreService 处理
    */
   public async createGroupConversation(
     userId: string,
@@ -229,210 +89,40 @@ export class ConversationService {
     memberIds: string[],
     avatarUrl?: string | null
   ): Promise<Conversation> {
-    // 验证所有成员用户存在
-    const allUserIds = [userId, ...memberIds];
-    const users = await this.userRepository.find({
-      where: allUserIds.map(id => ({ id })),
-    });
-
-    if (users.length !== allUserIds.length) {
-      throw new NotFoundError("一个或多个用户未找到");
-    }
-
-    // 创建群聊对话
-    const conversation = this.conversationRepository.create({
-      type: ConversationType.GROUP,
-      name,
-      avatarUrl: avatarUrl || null,
-      createdById: userId,
-    });
-
-    await this.conversationRepository.save(conversation);
-
-    // 添加创建者为群主
-    const owner = this.conversationUserRepository.create({
-      conversationId: conversation.id,
-      userId: userId,
-      role: MemberRole.OWNER,
-    });
-
-    // 添加其他成员
-    const members = memberIds.map(memberId =>
-      this.conversationUserRepository.create({
-        conversationId: conversation.id,
-        userId: memberId,
-        role: MemberRole.MEMBER,
-      })
-    );
-
-    await this.conversationUserRepository.save([owner, ...members]);
-
-    // 获取创建者和成员的用户名
-    const creatorUser = users.find(u => u.id === userId);
-    const memberUsers = users.filter(u => memberIds.includes(u.id));
-
-    // 创建系统消息：群组创建
-    let systemMessageContent = `${creatorUser?.username || "用户"} 创建了群聊`;
-    if (memberUsers.length > 0) {
-      const memberNames = memberUsers.map(u => u.username).join("、");
-      systemMessageContent += ` 并邀请 ${memberNames} 加入群聊`;
-    }
-
-    await this.createSystemMessage(conversation.id, systemMessageContent, userId);
-
-    return conversation;
+    return conversationCoreService.createGroupConversation(userId, name, memberIds, avatarUrl);
   }
 
   /**
    * 创建或获取单聊对话
+   * 委托给 ConversationCoreService 处理
    */
   public async getOrCreateSingleConversation(
     userId: string,
     otherUserId: string
   ): Promise<{ conversation: Conversation; isNew: boolean }> {
-    if (userId === otherUserId) {
-      throw new ValidationError("无法与自己创建会话");
-    }
-
-    // 检查对方用户是否存在
-    const otherUser = await this.userRepository.findOne({
-      where: { id: otherUserId },
-    });
-    if (!otherUser) {
-      throw new NotFoundError("用户未找到");
-    }
-
-    // 验证是否是好友关系
-    const friendship = await this.friendRepository.findOne({
-      where: [
-        { requesterId: userId, recipientId: otherUserId, status: FriendStatus.ACCEPTED },
-        { requesterId: otherUserId, recipientId: userId, status: FriendStatus.ACCEPTED },
-      ],
-    });
-
-    if (!friendship) {
-      throw new ForbiddenError("只能与好友创建对话");
-    }
-
-    // 查找是否已存在单聊对话（包括已删除的）
-    const userConversations = await this.conversationUserRepository.find({
-      where: { userId },
-      relations: ["conversation"],
-    });
-
-    for (const uc of userConversations) {
-      if (uc.conversation.type === ConversationType.SINGLE) {
-        // 检查是否包含对方用户
-        const members = await this.conversationUserRepository.find({
-          where: { conversationId: uc.conversationId },
-        });
-
-        const otherMember = members.find(m => m.userId === otherUserId);
-        if (otherMember) {
-          // 如果对话存在但被软删除，只恢复当前用户的访问权限
-          // 对方用户的对话保持隐藏状态，直到收到第一条消息时自动恢复
-          if (uc.deletedAt !== null) {
-            uc.deletedAt = null;
-            await this.conversationUserRepository.save(uc);
-            // 对于发起恢复的用户，将其视为新会话
-            return { conversation: uc.conversation, isNew: true };
-          }
-
-          return { conversation: uc.conversation, isNew: false };
-        }
-      }
-    }
-
-    // 创建新的单聊对话
-    const conversation = this.conversationRepository.create({
-      type: ConversationType.SINGLE,
-      createdById: userId,
-    });
-
-    await this.conversationRepository.save(conversation);
-
-    // 添加两个用户到对话
-    // 创建者立即可见对话
-    const user1 = this.conversationUserRepository.create({
-      conversationId: conversation.id,
-      userId: userId,
-      role: MemberRole.MEMBER,
-    });
-
-    // 对方用户暂时隐藏对话，直到收到第一条消息时自动恢复
-    const now = new Date();
-    const user2 = this.conversationUserRepository.create({
-      conversationId: conversation.id,
-      userId: otherUserId,
-      role: MemberRole.MEMBER,
-      deletedAt: now,
-      hiddenUntil: now,
-    });
-
-    await this.conversationUserRepository.save([user1, user2]);
-
-    return { conversation, isNew: true };
+    return conversationCoreService.getOrCreateSingleConversation(userId, otherUserId);
   }
 
   /**
    * 获取对话详情
+   * 委托给 ConversationCoreService 处理
    */
   public async getConversation(
     conversationId: string,
     userId: string
   ): Promise<Conversation> {
-    // 验证用户是否是对话成员
-    const member = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId },
-    });
-
-    if (!member) {
-      throw new ForbiddenError("您不是此会话的成员");
-    }
-
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundError("会话未找到");
-    }
-
-    return conversation;
+    return conversationCoreService.getConversation(conversationId, userId);
   }
 
   /**
    * 删除对话（仅对当前用户）
+   * 委托给 ConversationCoreService 处理
    */
   public async deleteConversation(
     conversationId: string,
     userId: string
   ): Promise<void> {
-    const member = await this.conversationUserRepository.findOne({
-      where: { conversationId, userId },
-    });
-
-    if (!member) {
-      throw new ForbiddenError("您不是此会话的成员");
-    }
-
-    // 获取最后一条消息，用于标记已读
-    const lastMessage = await this.messageRepository.findOne({
-      where: {
-        conversationId,
-        deletedAt: IsNull(),
-      },
-      order: { createdAt: "DESC" },
-    });
-
-    const now = new Date();
-    // 软删除：设置deletedAt隐藏对话，设置hiddenUntil记录删除时间点
-    // hiddenUntil用于过滤旧消息，只显示删除后的新消息
-    // 同时标记所有消息为已读，避免重新创建对话时仍显示旧的未读数
-    member.deletedAt = now;
-    member.hiddenUntil = now;
-    member.lastReadMessageId = lastMessage?.id || null;
-    await this.conversationUserRepository.save(member);
+    return conversationCoreService.deleteConversation(conversationId, userId);
   }
 
   /**
