@@ -15,6 +15,7 @@ import { ConversationListItem } from "../types/conversation.types";
 import websocketService from "./websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 import { PrivacyUtil } from "../utils/privacy.util";
+import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
 
 /**
  * 对话服务
@@ -885,7 +886,7 @@ export class ConversationService {
     // 软删除成员资格
     targetMember.deletedAt = new Date();
     // 将hiddenUntil设置为遥远的未来日期，这样他们就看不到以前的消息
-    targetMember.hiddenUntil = new Date('2099-12-31');
+    targetMember.hiddenUntil = new Date(SPECIAL_DATES.FAR_FUTURE_DATE);
     await this.conversationUserRepository.save(targetMember);
 
     // 创建系统消息：移除成员（排除被移除的用户）
@@ -905,14 +906,14 @@ export class ConversationService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // 如果要置顶，检查置顶数量限制（最多5个）
+    // 如果要置顶，检查置顶数量限制
     if (!member.isPinned) {
       const pinnedCount = await this.conversationUserRepository.count({
         where: { userId, isPinned: true, deletedAt: IsNull() },
       });
 
-      if (pinnedCount >= 5) {
-        throw new ValidationError("最多只能置顶5个聊天");
+      if (pinnedCount >= CONVERSATION_LIMITS.MAX_PINNED_CHATS) {
+        throw new ValidationError(`最多只能置顶${CONVERSATION_LIMITS.MAX_PINNED_CHATS}个聊天`);
       }
     }
 
@@ -944,8 +945,8 @@ export class ConversationService {
       mutedUntil.setSeconds(mutedUntil.getSeconds() + duration);
       member.mutedUntil = mutedUntil;
     } else {
-      // 永久静音：设置为MySQL TIMESTAMP的最大值 (2038-01-19)
-      member.mutedUntil = new Date('2038-01-19 03:14:07');
+      // 永久静音：设置为MySQL TIMESTAMP的最大值
+      member.mutedUntil = new Date(SPECIAL_DATES.MYSQL_TIMESTAMP_MAX);
     }
 
     await this.conversationUserRepository.save(member);

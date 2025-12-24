@@ -1,14 +1,14 @@
 /**
- * Query Helper Utilities
- * Common query patterns to prevent N+1 queries
+ * 查询助手工具类
+ * 通用查询模式以防止 N+1 查询
  *
- * These helpers encapsulate common eager loading and filtering patterns
- * to ensure consistent query optimization across the application.
+ * 这些助手封装了通用的预加载和过滤模式
+ * 以确保整个应用程序中一致的查询优化
  *
- * Benefits:
- * - Prevents N+1 query problems
- * - Ensures consistent eager loading patterns
- * - Reduces boilerplate in services
+ * 优势：
+ * - 防止 N+1 查询问题
+ * - 确保一致的预加载模式
+ * - 减少服务中的样板代码
  */
 
 import { SelectQueryBuilder } from 'typeorm';
@@ -16,13 +16,13 @@ import { ConversationUser } from '../models/ConversationUser.entity';
 
 export class QueryHelper {
   /**
-   * Apply eager loading for conversation users with user and profile relations
+   * 为会话用户应用预加载（包含用户和个人资料关系）
    *
-   * This prevents N+1 queries when fetching conversation members by loading
-   * related user and profile data in a single query.
+   * 通过在单个查询中加载相关的用户和个人资料数据
+   * 防止在获取会话成员时出现 N+1 查询
    *
-   * @param queryBuilder - Query builder for ConversationUser
-   * @returns Query builder with eager loading applied
+   * @param queryBuilder - ConversationUser 的查询构建器
+   * @returns 应用了预加载的查询构建器
    */
   static applyConversationUserEagerLoading(
     queryBuilder: SelectQueryBuilder<ConversationUser>
@@ -33,13 +33,13 @@ export class QueryHelper {
   }
 
   /**
-   * Apply filter for active (non-deleted) members
+   * 应用活跃（未删除）成员过滤器
    *
-   * Ensures only active conversation members are returned
-   * by filtering out soft-deleted entries.
+   * 通过过滤软删除的条目
+   * 确保只返回活跃的会话成员
    *
-   * @param queryBuilder - Query builder for ConversationUser
-   * @returns Query builder with active member filter
+   * @param queryBuilder - ConversationUser 的查询构建器
+   * @returns 应用了活跃成员过滤器的查询构建器
    */
   static applyActiveMemberFilter(
     queryBuilder: SelectQueryBuilder<ConversationUser>
@@ -48,12 +48,12 @@ export class QueryHelper {
   }
 
   /**
-   * Apply both eager loading and active member filter
+   * 同时应用预加载和活跃成员过滤器
    *
-   * Convenience method that combines both common patterns.
+   * 结合两种通用模式的便捷方法
    *
-   * @param queryBuilder - Query builder for ConversationUser
-   * @returns Query builder with eager loading and active filter
+   * @param queryBuilder - ConversationUser 的查询构建器
+   * @returns 应用了预加载和活跃过滤器的查询构建器
    */
   static applyStandardConversationUserQuery(
     queryBuilder: SelectQueryBuilder<ConversationUser>
