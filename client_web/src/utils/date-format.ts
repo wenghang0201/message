@@ -64,35 +64,6 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * 获取相对时间（例如："5 分钟前"、"2 小时前"）
- */
-export function getRelativeTime(timestamp: number): string {
-  const now = Date.now()
-  const diffInSeconds = Math.floor((now - timestamp) / 1000)
-
-  if (diffInSeconds < 60) {
-    return 'just now'
-  }
-
-  const diffInMinutes = Math.floor(diffInSeconds / 60)
-  if (diffInMinutes < 60) {
-    return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`
-  }
-
-  const diffInHours = Math.floor(diffInMinutes / 60)
-  if (diffInHours < 24) {
-    return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`
-  }
-
-  const diffInDays = Math.floor(diffInHours / 24)
-  if (diffInDays < 7) {
-    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`
-  }
-
-  return formatFullDateTime(timestamp)
-}
-
-/**
  * 格式化最后在线时间
  * 从 ChatListItem 和 ChatDetail 提取的公共逻辑
  */
