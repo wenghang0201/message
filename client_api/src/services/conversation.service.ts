@@ -1,3 +1,4 @@
+import { injectable, inject } from "tsyringe";
 import { Conversation, ConversationType, MessageSendPermission, MemberAddPermission } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
 import { Message } from "../models/Message.entity";
@@ -11,26 +12,27 @@ import {
 } from "../utils/app-error.util";
 import { ConversationListItem } from "../types/conversation.types";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/business.config";
-import conversationCoreService from "./conversation-core.service";
-import groupService from "./group.service";
-import conversationPermissionService from "./conversation-permission.service";
+import { ConversationCoreService } from "./conversation-core.service";
+import { GroupService } from "./group.service";
+import { ConversationPermissionService } from "./conversation-permission.service";
+import conversationCoreServiceSingleton from "./conversation-core.service";
+import groupServiceSingleton from "./group.service";
+import conversationPermissionServiceSingleton from "./conversation-permission.service";
 
 /**
  * 对话服务
  */
+@injectable()
 export class ConversationService {
-  private conversationRepository: Repository<Conversation>;
-  private conversationUserRepository: Repository<ConversationUser>;
-  private messageRepository: Repository<Message>;
-  private messageStatusRepository: Repository<MessageStatus>;
-
-  constructor() {
-    this.conversationRepository = AppDataSource.getRepository(Conversation);
-    this.conversationUserRepository =
-      AppDataSource.getRepository(ConversationUser);
-    this.messageRepository = AppDataSource.getRepository(Message);
-    this.messageStatusRepository = AppDataSource.getRepository(MessageStatus);
-  }
+  constructor(
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>,
+    @inject('MessageRepository') private messageRepository: Repository<Message>,
+    @inject('MessageStatusRepository') private messageStatusRepository: Repository<MessageStatus>,
+    @inject(ConversationCoreService) private conversationCoreService: ConversationCoreService,
+    @inject(GroupService) private groupService: GroupService,
+    @inject(ConversationPermissionService) private conversationPermissionService: ConversationPermissionService
+  ) {}
 
   /**
    * 获取用户的所有对话列表（优化版 - 批量查询减少 N+1 问题）
@@ -39,7 +41,7 @@ export class ConversationService {
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    return conversationCoreService.getUserConversations(userId);
+    return this.conversationCoreService.getUserConversations(userId);
   }
 
   /**
@@ -52,7 +54,7 @@ export class ConversationService {
     memberIds: string[],
     avatarUrl?: string | null
   ): Promise<Conversation> {
-    return conversationCoreService.createGroupConversation(userId, name, memberIds, avatarUrl);
+    return this.conversationCoreService.createGroupConversation(userId, name, memberIds, avatarUrl);
   }
 
   /**
@@ -63,18 +65,18 @@ export class ConversationService {
     userId: string,
     otherUserId: string
   ): Promise<{ conversation: Conversation; isNew: boolean }> {
-    return conversationCoreService.getOrCreateSingleConversation(userId, otherUserId);
+    return this.conversationCoreService.getOrCreateSingleConversation(userId, otherUserId);
   }
 
   /**
    * 获取对话详情
-   * 委托给 ConversationCoreService 处理
+  * 委托给 ConversationCoreService 处理
    */
   public async getConversation(
     conversationId: string,
     userId: string
   ): Promise<Conversation> {
-    return conversationCoreService.getConversation(conversationId, userId);
+    return this.conversationCoreService.getConversation(conversationId, userId);
   }
 
   /**
@@ -85,7 +87,7 @@ export class ConversationService {
     conversationId: string,
     userId: string
   ): Promise<void> {
-    return conversationCoreService.deleteConversation(conversationId, userId);
+    return this.conversationCoreService.deleteConversation(conversationId, userId);
   }
 
   /**
@@ -263,9 +265,9 @@ export class ConversationService {
    * 委托给 GroupService 处理
    */
   public async getGroupMembers(conversationId: string, userId: string) {
-    const members = await groupService.getGroupMembers(conversationId, userId);
+    const members = await this.groupService.getGroupMembers(conversationId, userId);
 
-    return members.map((member) => ({
+    return members.map((member: ConversationUser) => ({
       userId: member.userId,
       username: member.user.username,
       email: member.user.email,
@@ -284,7 +286,7 @@ export class ConversationService {
     requesterId: string,
     memberIds: string[]
   ) {
-    return groupService.addGroupMembers(conversationId, requesterId, memberIds);
+    return this.groupService.addGroupMembers(conversationId, requesterId, memberIds);
   }
 
   /**
@@ -297,7 +299,7 @@ export class ConversationService {
     targetUserId: string,
     newRole: MemberRole
   ) {
-    return groupService.updateMemberRole(conversationId, requesterId, targetUserId, newRole);
+    return this.groupService.updateMemberRole(conversationId, requesterId, targetUserId, newRole);
   }
 
   /**
@@ -309,7 +311,7 @@ export class ConversationService {
     requesterId: string,
     targetUserId: string
   ) {
-    return groupService.removeGroupMember(conversationId, requesterId, targetUserId);
+    return this.groupService.removeGroupMember(conversationId, requesterId, targetUserId);
   }
 
   /**
@@ -483,7 +485,7 @@ export class ConversationService {
     userId: string,
     permission: MessageSendPermission
   ): Promise<Conversation> {
-    return conversationPermissionService.updateMessageSendPermission(conversationId, userId, permission);
+    return this.conversationPermissionService.updateMessageSendPermission(conversationId, userId, permission);
   }
 
   /**
@@ -495,7 +497,7 @@ export class ConversationService {
     userId: string,
     permission: MemberAddPermission
   ): Promise<Conversation> {
-    return conversationPermissionService.updateMemberAddPermission(conversationId, userId, permission);
+    return this.conversationPermissionService.updateMemberAddPermission(conversationId, userId, permission);
   }
 
   /**
@@ -507,7 +509,7 @@ export class ConversationService {
     userId: string,
     requireApproval: boolean
   ): Promise<Conversation> {
-    return conversationPermissionService.updateRequireApproval(conversationId, userId, requireApproval);
+    return this.conversationPermissionService.updateRequireApproval(conversationId, userId, requireApproval);
   }
 
   /**
@@ -518,7 +520,7 @@ export class ConversationService {
     conversationId: string,
     userId: string
   ): Promise<void> {
-    return groupService.leaveGroup(conversationId, userId);
+    return this.groupService.leaveGroup(conversationId, userId);
   }
 
   /**
@@ -530,7 +532,7 @@ export class ConversationService {
     currentOwnerId: string,
     newOwnerId: string
   ): Promise<void> {
-    return groupService.transferOwnership(conversationId, currentOwnerId, newOwnerId);
+    return this.groupService.transferOwnership(conversationId, currentOwnerId, newOwnerId);
   }
 
   /**
@@ -541,7 +543,7 @@ export class ConversationService {
     conversationId: string,
     userId: string
   ): Promise<void> {
-    return groupService.disbandGroup(conversationId, userId);
+    return this.groupService.disbandGroup(conversationId, userId);
   }
 
   /**
@@ -552,7 +554,7 @@ export class ConversationService {
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    return conversationPermissionService.canSendMessage(conversationId, userId);
+    return this.conversationPermissionService.canSendMessage(conversationId, userId);
   }
 
   /**
@@ -563,8 +565,17 @@ export class ConversationService {
     conversationId: string,
     userId: string
   ): Promise<boolean> {
-    return conversationPermissionService.canAddMember(conversationId, userId);
+    return this.conversationPermissionService.canAddMember(conversationId, userId);
   }
 }
 
-export default new ConversationService();
+// Dual export for backward compatibility
+export default new ConversationService(
+  AppDataSource.getRepository(Conversation),
+  AppDataSource.getRepository(ConversationUser),
+  AppDataSource.getRepository(Message),
+  AppDataSource.getRepository(MessageStatus),
+  conversationCoreServiceSingleton,
+  groupServiceSingleton,
+  conversationPermissionServiceSingleton
+);

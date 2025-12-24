@@ -1,3 +1,4 @@
+import { injectable, inject } from "tsyringe";
 import { Repository, IsNull } from "typeorm";
 import { Conversation, ConversationType } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
@@ -20,28 +21,17 @@ import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/business.config
  * 会话核心服务
  * 处理基本的会话 CRUD 操作
  */
+@injectable()
 export class ConversationCoreService {
-  private conversationRepository: Repository<Conversation>;
-  private conversationUserRepository: Repository<ConversationUser>;
-  private messageRepository: Repository<Message>;
-  private messageStatusRepository: Repository<MessageStatus>;
-  private userRepository: Repository<User>;
-  private friendRepository: Repository<Friend>;
-  private systemMessageCreator: SystemMessageCreator;
-
-  constructor() {
-    this.conversationRepository = AppDataSource.getRepository(Conversation);
-    this.conversationUserRepository =
-      AppDataSource.getRepository(ConversationUser);
-    this.messageRepository = AppDataSource.getRepository(Message);
-    this.messageStatusRepository = AppDataSource.getRepository(MessageStatus);
-    this.userRepository = AppDataSource.getRepository(User);
-    this.friendRepository = AppDataSource.getRepository(Friend);
-    this.systemMessageCreator = new SystemMessageCreator(
-      this.messageRepository,
-      this.conversationUserRepository
-    );
-  }
+  constructor(
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>,
+    @inject('MessageRepository') private messageRepository: Repository<Message>,
+    @inject('MessageStatusRepository') private messageStatusRepository: Repository<MessageStatus>,
+    @inject('UserRepository') private userRepository: Repository<User>,
+    @inject('FriendRepository') private friendRepository: Repository<Friend>,
+    @inject(SystemMessageCreator) private systemMessageCreator: SystemMessageCreator
+  ) {}
 
   /**
    * 获取用户的会话列表（使用预加载优化以防止 N+1 查询）
@@ -758,4 +748,16 @@ export class ConversationCoreService {
   }
 }
 
-export default new ConversationCoreService();
+// Dual export for backward compatibility
+export default new ConversationCoreService(
+  AppDataSource.getRepository(Conversation),
+  AppDataSource.getRepository(ConversationUser),
+  AppDataSource.getRepository(Message),
+  AppDataSource.getRepository(MessageStatus),
+  AppDataSource.getRepository(User),
+  AppDataSource.getRepository(Friend),
+  new SystemMessageCreator(
+    AppDataSource.getRepository(Message),
+    AppDataSource.getRepository(ConversationUser)
+  )
+);

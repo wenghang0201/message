@@ -1,3 +1,4 @@
+import { injectable, inject } from "tsyringe";
 import { Repository, IsNull } from "typeorm";
 import { Message } from "../models/Message.entity";
 import { Conversation, ConversationType } from "../models/Conversation.entity";
@@ -10,25 +11,22 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { SendMessageDto } from "../schemas/message.schema";
-import conversationService from "./conversation.service";
+import { ConversationService } from "./conversation.service";
+import conversationServiceSingleton from "./conversation.service";
 import { MESSAGE_LIMITS } from "../constants/business.config";
 
 /**
  * 消息服务
  */
+@injectable()
 export class MessageService {
-  private messageRepository: Repository<Message>;
-  private conversationRepository: Repository<Conversation>;
-  private conversationUserRepository: Repository<ConversationUser>;
-  private friendRepository: Repository<Friend>;
-
-  constructor() {
-    this.messageRepository = AppDataSource.getRepository(Message);
-    this.conversationRepository = AppDataSource.getRepository(Conversation);
-    this.conversationUserRepository =
-      AppDataSource.getRepository(ConversationUser);
-    this.friendRepository = AppDataSource.getRepository(Friend);
-  }
+  constructor(
+    @inject('MessageRepository') private messageRepository: Repository<Message>,
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>,
+    @inject('FriendRepository') private friendRepository: Repository<Friend>,
+    @inject(ConversationService) private conversationService: ConversationService
+  ) {}
 
   /**
    * 获取对话的所有活跃成员ID（排除已退出的成员）
@@ -93,7 +91,7 @@ export class MessageService {
       }
     } else if (conversation.type === ConversationType.GROUP) {
       // 如果是群聊，检查消息发送权限
-      const canSend = await conversationService.canSendMessage(conversationId, userId);
+      const canSend = await this.conversationService.canSendMessage(conversationId, userId);
       if (!canSend) {
         throw new ForbiddenError("您没有在此群组发送消息的权限");
       }
@@ -380,4 +378,11 @@ export class MessageService {
   }
 }
 
-export default new MessageService();
+// Dual export for backward compatibility
+export default new MessageService(
+  AppDataSource.getRepository(Message),
+  AppDataSource.getRepository(Conversation),
+  AppDataSource.getRepository(ConversationUser),
+  AppDataSource.getRepository(Friend),
+  conversationServiceSingleton
+);

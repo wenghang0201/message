@@ -6,6 +6,7 @@
  * 使用 PermissionChecker 工具类消除重复代码
  */
 
+import { injectable, inject } from "tsyringe";
 import { Repository, IsNull } from "typeorm";
 import { AppDataSource } from "../config/database";
 import {
@@ -21,25 +22,19 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { PermissionChecker } from "../utils/permission-checker.util";
-import websocketService from "./websocket.service";
+import websocketService from "../services/websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 
 /**
  * 会话权限服务类
  */
+@injectable()
 export class ConversationPermissionService {
-  private conversationRepository: Repository<Conversation>;
-  private conversationUserRepository: Repository<ConversationUser>;
-  private permissionChecker: PermissionChecker;
-
-  constructor() {
-    this.conversationRepository = AppDataSource.getRepository(Conversation);
-    this.conversationUserRepository = AppDataSource.getRepository(ConversationUser);
-    this.permissionChecker = new PermissionChecker(
-      this.conversationRepository,
-      this.conversationUserRepository
-    );
-  }
+  constructor(
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>,
+    @inject(PermissionChecker) private permissionChecker: PermissionChecker
+  ) {}
 
   /**
    * 检查用户是否可以在会话中发送消息
@@ -206,4 +201,12 @@ export class ConversationPermissionService {
   }
 }
 
-export default new ConversationPermissionService();
+// Dual export for backward compatibility
+export default new ConversationPermissionService(
+  AppDataSource.getRepository(Conversation),
+  AppDataSource.getRepository(ConversationUser),
+  new PermissionChecker(
+    AppDataSource.getRepository(Conversation),
+    AppDataSource.getRepository(ConversationUser)
+  )
+);

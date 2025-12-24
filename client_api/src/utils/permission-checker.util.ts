@@ -10,14 +10,16 @@
  * - 整个应用程序中一致的权限检查
  */
 
+import { injectable, inject } from 'tsyringe';
 import { Repository, IsNull } from 'typeorm';
 import { Conversation, ConversationType, MessageSendPermission, MemberAddPermission } from '../models/Conversation.entity';
 import { ConversationUser, MemberRole } from '../models/ConversationUser.entity';
 
+@injectable()
 export class PermissionChecker {
   constructor(
-    private conversationRepository: Repository<Conversation>,
-    private conversationUserRepository: Repository<ConversationUser>
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>
   ) {}
 
   /**

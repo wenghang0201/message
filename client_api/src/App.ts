@@ -8,6 +8,7 @@ import Tool from "./utils/tool.util";
 import Log from "./utils/log.util";
 import appConfig from "./config/app.config";
 import { initializeDatabase } from "./config/database";
+import { setupContainer } from "./container/container";
 import authRoutes from "./routes/auth.routes";
 import userProfileRoutes from "./routes/user-profile.routes";
 import conversationRoutes from "./routes/conversation.routes";
@@ -49,6 +50,10 @@ class App {
       // 初始化数据库连接
       await initializeDatabase();
       Log.info("数据库连接成功");
+
+      // 初始化依赖注入容器
+      setupContainer();
+      Log.info("依赖注入容器初始化成功");
 
       // 初始化Express
       this._express = express();

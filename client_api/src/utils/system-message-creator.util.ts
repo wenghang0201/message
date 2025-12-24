@@ -12,16 +12,18 @@
  * - 群组解散
  */
 
+import { injectable, inject } from 'tsyringe';
 import { Repository, IsNull } from 'typeorm';
 import { Message } from '../models/Message.entity';
 import { ConversationUser } from '../models/ConversationUser.entity';
 import websocketService from '../services/websocket.service';
 import { WebSocketEvent } from '../constants/websocket-events';
 
+@injectable()
 export class SystemMessageCreator {
   constructor(
-    private messageRepository: Repository<Message>,
-    private conversationUserRepository: Repository<ConversationUser>
+    @inject('MessageRepository') private messageRepository: Repository<Message>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>
   ) {}
 
   /**

@@ -6,6 +6,7 @@
  * 专注于群组成员管理和权限控制
  */
 
+import { injectable, inject } from "tsyringe";
 import { Repository, IsNull, In } from "typeorm";
 import { AppDataSource } from "../config/database";
 import { Conversation, ConversationType } from "../models/Conversation.entity";
@@ -18,29 +19,21 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { SystemMessageCreator } from "../utils/system-message-creator.util";
-import websocketService from "./websocket.service";
+import websocketService from "../services/websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 
 /**
  * 群组服务类
  */
+@injectable()
 export class GroupService {
-  private conversationRepository: Repository<Conversation>;
-  private conversationUserRepository: Repository<ConversationUser>;
-  private userRepository: Repository<User>;
-  private messageRepository: Repository<Message>;
-  private systemMessageCreator: SystemMessageCreator;
-
-  constructor() {
-    this.conversationRepository = AppDataSource.getRepository(Conversation);
-    this.conversationUserRepository = AppDataSource.getRepository(ConversationUser);
-    this.userRepository = AppDataSource.getRepository(User);
-    this.messageRepository = AppDataSource.getRepository(Message);
-    this.systemMessageCreator = new SystemMessageCreator(
-      this.messageRepository,
-      this.conversationUserRepository
-    );
-  }
+  constructor(
+    @inject('ConversationRepository') private conversationRepository: Repository<Conversation>,
+    @inject('ConversationUserRepository') private conversationUserRepository: Repository<ConversationUser>,
+    @inject('UserRepository') private userRepository: Repository<User>,
+    @inject('MessageRepository') private messageRepository: Repository<Message>,
+    @inject(SystemMessageCreator) private systemMessageCreator: SystemMessageCreator
+  ) {}
 
   /**
    * 获取群组成员列表
@@ -653,4 +646,14 @@ export class GroupService {
   }
 }
 
-export default new GroupService();
+// Dual export for backward compatibility
+export default new GroupService(
+  AppDataSource.getRepository(Conversation),
+  AppDataSource.getRepository(ConversationUser),
+  AppDataSource.getRepository(User),
+  AppDataSource.getRepository(Message),
+  new SystemMessageCreator(
+    AppDataSource.getRepository(Message),
+    AppDataSource.getRepository(ConversationUser)
+  )
+);
