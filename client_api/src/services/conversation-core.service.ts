@@ -49,12 +49,13 @@ export class ConversationCoreService {
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    // 1. 获取用户参与的所有对话（排除已删除的）- 使用预加载
+    // 1. 获取用户参与的所有对话（排除用户手动删除的）- 使用预加载
+    // 显示条件：deletedAt IS NULL（活跃成员）OR hiddenUntil IS NULL（离开但未手动删除）
     const conversationUsers = await this.conversationUserRepository
       .createQueryBuilder("cu")
       .leftJoinAndSelect("cu.conversation", "conversation")
       .where("cu.userId = :userId", { userId })
-      .andWhere("cu.deletedAt IS NULL")
+      .andWhere("(cu.deletedAt IS NULL OR cu.hiddenUntil IS NULL)")
       .orderBy("conversation.updatedAt", "DESC")
       .getMany();
 

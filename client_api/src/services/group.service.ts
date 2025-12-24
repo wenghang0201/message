@@ -435,7 +435,8 @@ export class GroupService {
       throw new ForbiddenError("管理员不能移除其他管理员");
     }
 
-    // 软删除成员记录
+    // 标记成员移除时间（使用 deletedAt，但会话仍可见）
+    // 用户可以看到历史消息，但不能发送新消息
     targetMembership.deletedAt = new Date();
     await this.conversationUserRepository.save(targetMembership);
 
@@ -452,29 +453,25 @@ export class GroupService {
     await this.systemMessageCreator.createSystemMessage(
       conversationId,
       systemMessageContent,
-      requesterId,
-      targetUserId // 排除被移除的用户
+      requesterId
     );
 
-    // 通知所有成员
+    // 获取所有活跃成员
     const members = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
       select: ["userId"],
     });
 
-    // 通知被移除的用户
-    websocketService.sendMessageToUser(targetUserId, WebSocketEvent.CONVERSATION_DELETED, {
-      conversationId,
+    // 通知被移除的用户（发送更新事件，不删除会话）
+    websocketService.sendMessageToUser(targetUserId, WebSocketEvent.CONVERSATION_UPDATED, {
+      id: conversationId,
     });
 
     // 通知其他成员
     members.forEach(member => {
-      if (member.userId !== targetUserId) {
-        websocketService.sendMessageToUser(member.userId, WebSocketEvent.MEMBER_LEFT_GROUP, {
-          conversationId,
-          userId: targetUserId,
-        });
-      }
+      websocketService.sendMessageToUser(member.userId, WebSocketEvent.CONVERSATION_UPDATED, {
+        id: conversationId,
+      });
     });
   }
 
