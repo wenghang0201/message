@@ -90,8 +90,14 @@ class WebSocketService {
     });
 
     // 处理加入会话房间
-    socket.on(WebSocketEvent.JOIN_CONVERSATION, (conversationId: string) => {
-      socket.join(`conversation:${conversationId}`);
+    socket.on(WebSocketEvent.JOIN_CONVERSATION, async (conversationId: string) => {
+      // 验证用户是否是会话的活跃成员
+      const isMember = await this.isActiveMember(userId, conversationId);
+      if (isMember) {
+        socket.join(`conversation:${conversationId}`);
+      } else {
+        Log.warn(`用户 ${userId} 尝试加入非成员会话 ${conversationId}`);
+      }
     });
 
     // 处理离开会话房间
@@ -178,6 +184,26 @@ class WebSocketService {
 
     const data: WebSocketEventData[WebSocketEvent.MESSAGE_DELETED] = { messageId };
     this.io.to(`conversation:${conversationId}`).emit(WebSocketEvent.MESSAGE_DELETED, data);
+  }
+
+  /**
+   * 检查用户是否是会话的活跃成员
+   */
+  private async isActiveMember(userId: string, conversationId: string): Promise<boolean> {
+    try {
+      const { ConversationUser } = await import('../models/ConversationUser.entity');
+      const { IsNull } = await import('typeorm');
+      const conversationUserRepository = AppDataSource.getRepository(ConversationUser);
+
+      const member = await conversationUserRepository.findOne({
+        where: { conversationId, userId, deletedAt: IsNull() },
+      });
+
+      return member !== null;
+    } catch (error) {
+      Log.error(`检查会话成员失败: ${error}`);
+      return false;
+    }
   }
 
   /**
