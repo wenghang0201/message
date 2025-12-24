@@ -17,8 +17,8 @@ import { SystemMessageCreator } from "../utils/system-message-creator.util";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
 
 /**
- * Conversation Core Service
- * Handles basic conversation CRUD operations
+ * 会话核心服务
+ * 处理基本的会话 CRUD 操作
  */
 export class ConversationCoreService {
   private conversationRepository: Repository<Conversation>;
@@ -44,12 +44,12 @@ export class ConversationCoreService {
   }
 
   /**
-   * Get user's conversation list (optimized with eager loading to prevent N+1 queries)
+   * 获取用户的会话列表（使用预加载优化以防止 N+1 查询）
    */
   public async getUserConversations(
     userId: string
   ): Promise<ConversationListItem[]> {
-    // 1. Get all conversations user participates in (excluding deleted) - using eager loading
+    // 1. 获取用户参与的所有对话（排除已删除的）- 使用预加载
     const conversationUsers = await this.conversationUserRepository
       .createQueryBuilder("cu")
       .leftJoinAndSelect("cu.conversation", "conversation")
