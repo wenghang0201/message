@@ -158,7 +158,7 @@ export class ConversationCoreService {
         lastMessage = filteredMessage || null;
       }
 
-      // Calculate unread count (keep original position-based logic)
+      // 计算未读数（保持原有的位置计算逻辑）
       const unreadCount = await this.getUnreadCount(conversation.id, userId);
 
       const item: ConversationListItem = {
@@ -178,7 +178,7 @@ export class ConversationCoreService {
         updatedAt: conversation.updatedAt,
       };
 
-      // Add last message
+      // 添加最后一条消息
       if (lastMessage) {
         item.lastMessage = {
           id: lastMessage.id,
@@ -206,7 +206,7 @@ export class ConversationCoreService {
       throw new ValidationError("无法与自己创建会话");
     }
 
-    // Check if other user exists
+    // 检查对方用户是否存在
     const otherUser = await this.userRepository.findOne({
       where: { id: otherUserId },
     });
@@ -214,7 +214,7 @@ export class ConversationCoreService {
       throw new NotFoundError("用户未找到");
     }
 
-    // Verify friendship exists
+    // 验证好友关系是否存在
     const friendship = await this.friendRepository.findOne({
       where: [
         { requesterId: userId, recipientId: otherUserId, status: FriendStatus.ACCEPTED },
@@ -226,7 +226,7 @@ export class ConversationCoreService {
       throw new ForbiddenError("只能与好友创建对话");
     }
 
-    // Find existing single chat conversation (including soft-deleted)
+    // 查找已存在的单聊会话（包括软删除的）
     const userConversations = await this.conversationUserRepository.find({
       where: { userId },
       relations: ["conversation"],
@@ -234,19 +234,19 @@ export class ConversationCoreService {
 
     for (const uc of userConversations) {
       if (uc.conversation.type === ConversationType.SINGLE) {
-        // Check if other user is in this conversation
+        // 检查对方用户是否在此会话中
         const members = await this.conversationUserRepository.find({
           where: { conversationId: uc.conversationId },
         });
 
         const otherMember = members.find(m => m.userId === otherUserId);
         if (otherMember) {
-          // If conversation exists but soft-deleted, restore access for current user only
-          // Other user's conversation stays hidden until first message is sent
+          // 如果会话存在但已软删除，仅为当前用户恢复访问权限
+          // 对方用户的会话保持隐藏状态，直到发送第一条消息
           if (uc.deletedAt !== null) {
             uc.deletedAt = null;
             await this.conversationUserRepository.save(uc);
-            // For user initiating restore, treat as new conversation
+            // 对于发起恢复的用户，视为新会话
             return { conversation: uc.conversation, isNew: true };
           }
 
@@ -255,7 +255,7 @@ export class ConversationCoreService {
       }
     }
 
-    // Create new single chat conversation
+    // 创建新的单聊会话
     const conversation = this.conversationRepository.create({
       type: ConversationType.SINGLE,
       createdById: userId,
@@ -263,15 +263,15 @@ export class ConversationCoreService {
 
     await this.conversationRepository.save(conversation);
 
-    // Add both users to conversation
-    // Creator immediately sees conversation
+    // 将两个用户添加到会话
+    // 创建者立即可见会话
     const user1 = this.conversationUserRepository.create({
       conversationId: conversation.id,
       userId: userId,
       role: MemberRole.MEMBER,
     });
 
-    // Other user's conversation is temporarily hidden until first message
+    // 对方用户的会话暂时隐藏，直到发送第一条消息
     const now = new Date();
     const user2 = this.conversationUserRepository.create({
       conversationId: conversation.id,
@@ -287,7 +287,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Create group conversation
+   * 创建群组会话
    */
   public async createGroupConversation(
     userId: string,
@@ -295,7 +295,7 @@ export class ConversationCoreService {
     memberIds: string[],
     avatarUrl?: string | null
   ): Promise<Conversation> {
-    // Validate all member users exist
+    // 验证所有成员用户是否存在
     const allUserIds = [userId, ...memberIds];
     const users = await this.userRepository.find({
       where: allUserIds.map(id => ({ id })),
@@ -305,7 +305,7 @@ export class ConversationCoreService {
       throw new NotFoundError("一个或多个用户未找到");
     }
 
-    // Create group conversation
+    // 创建群组会话
     const conversation = this.conversationRepository.create({
       type: ConversationType.GROUP,
       name,
@@ -315,14 +315,14 @@ export class ConversationCoreService {
 
     await this.conversationRepository.save(conversation);
 
-    // Add creator as group owner
+    // 将创建者添加为群主
     const owner = this.conversationUserRepository.create({
       conversationId: conversation.id,
       userId: userId,
       role: MemberRole.OWNER,
     });
 
-    // Add other members
+    // 添加其他成员
     const members = memberIds.map(memberId =>
       this.conversationUserRepository.create({
         conversationId: conversation.id,
@@ -333,11 +333,11 @@ export class ConversationCoreService {
 
     await this.conversationUserRepository.save([owner, ...members]);
 
-    // Get creator and member usernames
+    // 获取创建者和成员的用户名
     const creatorUser = users.find(u => u.id === userId);
     const memberUsers = users.filter(u => memberIds.includes(u.id));
 
-    // Create system message: group created
+    // 创建系统消息：群组已创建
     let systemMessageContent = `${creatorUser?.username || "用户"} 创建了群聊`;
     if (memberUsers.length > 0) {
       const memberNames = memberUsers.map(u => u.username).join("、");
@@ -350,13 +350,13 @@ export class ConversationCoreService {
   }
 
   /**
-   * Get conversation details
+   * 获取会话详情
    */
   public async getConversation(
     conversationId: string,
     userId: string
   ): Promise<Conversation> {
-    // Verify user is conversation member
+    // 验证用户是否为会话成员
     const member = await this.conversationUserRepository.findOne({
       where: { conversationId, userId },
     });
@@ -377,7 +377,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Delete conversation (for current user only)
+   * 删除会话（仅对当前用户）
    */
   public async deleteConversation(
     conversationId: string,
@@ -391,7 +391,7 @@ export class ConversationCoreService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // Get last message to mark as read
+    // 获取最后一条消息以标记为已读
     const lastMessage = await this.messageRepository.findOne({
       where: {
         conversationId,
@@ -401,9 +401,9 @@ export class ConversationCoreService {
     });
 
     const now = new Date();
-    // Soft delete: set deletedAt to hide conversation, set hiddenUntil to record deletion time
-    // hiddenUntil filters old messages, only showing messages after deletion
-    // Also mark all messages as read to avoid showing old unread count when conversation is recreated
+    // 软删除：设置 deletedAt 隐藏会话，设置 hiddenUntil 记录删除时间
+    // hiddenUntil 用于过滤旧消息，仅显示删除后的消息
+    // 同时标记所有消息为已读，避免会话重新创建时显示旧的未读数
     member.deletedAt = now;
     member.hiddenUntil = now;
     member.lastReadMessageId = lastMessage?.id || null;
@@ -411,7 +411,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Mark conversation messages as read
+   * 标记会话消息为已读
    */
   public async markAsRead(
     conversationId: string,
@@ -426,9 +426,9 @@ export class ConversationCoreService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // If no messageId provided, mark all messages as read
+    // 如果没有提供 messageId，标记所有消息为已读
     if (!messageId) {
-      // Get latest message (from other users)
+      // 获取最新消息（来自其他用户）
       const latestMessage = await this.messageRepository
         .createQueryBuilder("message")
         .where("message.conversationId = :conversationId", { conversationId })
@@ -445,7 +445,7 @@ export class ConversationCoreService {
       return;
     }
 
-    // Original logic: mark specific message
+    // 原始逻辑：标记特定消息
     const message = await this.messageRepository.findOne({
       where: { id: messageId, conversationId },
     });
@@ -454,7 +454,7 @@ export class ConversationCoreService {
       throw new NotFoundError("消息未找到");
     }
 
-    // Only update if new message is later
+    // 仅在新消息更晚时更新
     let shouldUpdate = true;
     if (member.lastReadMessageId) {
       const currentLastRead = await this.messageRepository.findOne({
@@ -471,7 +471,7 @@ export class ConversationCoreService {
       await this.conversationUserRepository.save(member);
     }
 
-    // Update message status
+    // 更新消息状态
     let status = await this.messageStatusRepository.findOne({
       where: { messageId, userId },
     });
@@ -491,7 +491,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Toggle pin/unpin conversation
+   * 切换会话置顶/取消置顶
    */
   public async togglePin(conversationId: string, userId: string): Promise<void> {
     const member = await this.conversationUserRepository.findOne({
@@ -502,7 +502,7 @@ export class ConversationCoreService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // If pinning, check pin count limit (max from config)
+    // 如果置顶，检查置顶数量限制（从配置中获取最大值）
     if (!member.isPinned) {
       const pinnedCount = await this.conversationUserRepository.count({
         where: { userId, isPinned: true, deletedAt: IsNull() },
@@ -513,14 +513,14 @@ export class ConversationCoreService {
       }
     }
 
-    // Toggle pin status
+    // 切换置顶状态
     member.isPinned = !member.isPinned;
     member.pinnedAt = member.isPinned ? new Date() : null;
     await this.conversationUserRepository.save(member);
   }
 
   /**
-   * Set conversation mute/do not disturb
+   * 设置会话免打扰
    */
   public async setMute(
     conversationId: string,
@@ -535,13 +535,13 @@ export class ConversationCoreService {
       throw new ForbiddenError("您不是此会话的成员");
     }
 
-    // If duration provided, calculate mute end time; otherwise permanent mute
+    // 如果提供了时长，计算免打扰结束时间；否则永久免打扰
     if (duration && duration > 0) {
       const mutedUntil = new Date();
       mutedUntil.setSeconds(mutedUntil.getSeconds() + duration);
       member.mutedUntil = mutedUntil;
     } else {
-      // Permanent mute: set to MySQL TIMESTAMP max value (2038-01-19)
+      // 永久免打扰：设置为 MySQL TIMESTAMP 最大值（2038-01-19）
       member.mutedUntil = new Date(SPECIAL_DATES.MYSQL_TIMESTAMP_MAX);
     }
 
@@ -549,7 +549,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Unmute conversation
+   * 取消会话免打扰
    */
   public async unmute(conversationId: string, userId: string): Promise<void> {
     const member = await this.conversationUserRepository.findOne({
@@ -565,14 +565,14 @@ export class ConversationCoreService {
   }
 
   /**
-   * Update group name
+   * 更新群组名称
    */
   public async updateGroupName(
     conversationId: string,
     userId: string,
     newName: string
   ): Promise<Conversation> {
-    // Verify conversation exists
+    // 验证会话是否存在
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
     });
@@ -585,7 +585,7 @@ export class ConversationCoreService {
       throw new ValidationError("这不是群组会话");
     }
 
-    // Check if requester is admin or owner
+    // 检查请求者是否为管理员或群主
     const requesterMembership = await this.conversationUserRepository.findOne({
       where: { conversationId, userId, deletedAt: IsNull() },
     });
@@ -601,7 +601,7 @@ export class ConversationCoreService {
       throw new ForbiddenError("只有管理员和群主可以更改群组名称");
     }
 
-    // Update group name
+    // 更新群组名称
     conversation.name = newName;
     await this.conversationRepository.save(conversation);
 
@@ -609,14 +609,14 @@ export class ConversationCoreService {
   }
 
   /**
-   * Update group avatar
+   * 更新群组头像
    */
   public async updateGroupAvatar(
     conversationId: string,
     userId: string,
     newAvatarUrl: string
   ): Promise<Conversation> {
-    // Verify conversation exists
+    // 验证会话是否存在
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
     });
@@ -629,7 +629,7 @@ export class ConversationCoreService {
       throw new ValidationError("这不是群组会话");
     }
 
-    // Check if requester is admin or owner
+    // 检查请求者是否为管理员或群主
     const requesterMembership = await this.conversationUserRepository.findOne({
       where: { conversationId, userId, deletedAt: IsNull() },
     });
@@ -645,7 +645,7 @@ export class ConversationCoreService {
       throw new ForbiddenError("只有管理员和群主可以更改群组头像");
     }
 
-    // Update group avatar
+    // 更新群组头像
     conversation.avatarUrl = newAvatarUrl;
     await this.conversationRepository.save(conversation);
 
@@ -653,7 +653,7 @@ export class ConversationCoreService {
   }
 
   /**
-   * Get unread message count (private helper)
+   * 获取未读消息数（私有辅助方法）
    */
   private async getUnreadCount(
     conversationId: string,
@@ -667,9 +667,9 @@ export class ConversationCoreService {
       return 0;
     }
 
-    // If conversation is hidden (deleted), only count messages after hiddenUntil
+    // 如果会话已隐藏（已删除），仅计算 hiddenUntil 之后的消息
     if (member.hiddenUntil) {
-      // Get all messages after hiddenUntil
+      // 获取 hiddenUntil 之后的所有消息
       const allMessages = await this.messageRepository
         .createQueryBuilder("message")
         .where("message.conversationId = :conversationId", { conversationId })
@@ -682,25 +682,25 @@ export class ConversationCoreService {
         .addOrderBy("message.id", "ASC")
         .getMany();
 
-      // If no lastReadMessageId, return count of all messages after hiddenUntil
+      // 如果没有 lastReadMessageId，返回 hiddenUntil 之后的所有消息数
       if (!member.lastReadMessageId) {
         return allMessages.length;
       }
 
-      // Find lastReadMessage position in list
+      // 在列表中查找 lastReadMessage 的位置
       const lastReadIndex = allMessages.findIndex(msg => msg.id === member.lastReadMessageId);
 
       if (lastReadIndex === -1) {
-        // lastReadMessage not in list after hiddenUntil, return all message count
+        // lastReadMessage 不在 hiddenUntil 之后的列表中，返回所有消息数
         return allMessages.length;
       }
 
-      // Return count of messages after lastReadMessage
+      // 返回 lastReadMessage 之后的消息数
       return allMessages.length - lastReadIndex - 1;
     }
 
     if (!member.lastReadMessageId) {
-      // If no read messages, return all message count (excluding own messages)
+      // 如果没有已读消息，返回所有消息数（排除自己的消息）
       const count = await this.messageRepository
         .createQueryBuilder("message")
         .where("message.conversationId = :conversationId", { conversationId })
@@ -710,17 +710,17 @@ export class ConversationCoreService {
       return count;
     }
 
-    // Get last read message
+    // 获取最后已读消息
     const lastReadMessage = await this.messageRepository.findOne({
       where: { id: member.lastReadMessageId },
     });
 
     if (!lastReadMessage) {
-      // If lastReadMessageId exists but message is deleted, return 0
+      // 如果 lastReadMessageId 存在但消息已删除，返回 0
       return 0;
     }
 
-    // Get all undeleted messages in conversation, sorted by time
+    // 获取会话中所有未删除的消息，按时间排序
     const allMessages = await this.messageRepository
       .createQueryBuilder("message")
       .where("message.conversationId = :conversationId", { conversationId })
@@ -730,15 +730,15 @@ export class ConversationCoreService {
       .addOrderBy("message.id", "ASC")
       .getMany();
 
-    // Find lastReadMessage position in list
+    // 在列表中查找 lastReadMessage 的位置
     const lastReadIndex = allMessages.findIndex(msg => msg.id === member.lastReadMessageId);
 
     if (lastReadIndex === -1) {
-      // lastReadMessage not in list (might be own message or deleted), return all message count
+      // lastReadMessage 不在列表中（可能是自己的消息或已删除），返回所有消息数
       return allMessages.length;
     }
 
-    // Return count of messages after lastReadMessage
+    // 返回 lastReadMessage 之后的消息数
     return allMessages.length - lastReadIndex - 1;
   }
 }
