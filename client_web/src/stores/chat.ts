@@ -19,6 +19,12 @@ export const useChatStore = defineStore('chat', () => {
     await fetchConversations()
   })
 
+  // 监听会话删除事件（用户离开群组）
+  websocketService.onConversationDeleted((data) => {
+    // 从列表中移除该会话
+    deleteChat(data.conversationId)
+  })
+
   // 监听群组解散事件
   websocketService.onGroupDisbanded((data) => {
     // 更新聊天的disbandedAt时间戳

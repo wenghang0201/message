@@ -15,6 +15,7 @@ class WebSocketService {
   private messageDeletedListeners: Set<(messageId: string) => void> = new Set();
   private messageReadListeners: Set<(data: WebSocketEventData[WebSocketEvent.MESSAGE_READ]) => void> = new Set();
   private newConversationListeners: Set<(conversation: WebSocketEventData[WebSocketEvent.NEW_CONVERSATION]) => void> = new Set();
+  private conversationDeletedListeners: Set<(data: WebSocketEventData[WebSocketEvent.CONVERSATION_DELETED]) => void> = new Set();
   private groupNameUpdatedListeners: Set<(data: WebSocketEventData[WebSocketEvent.GROUP_NAME_UPDATED]) => void> = new Set();
   private groupAvatarUpdatedListeners: Set<(data: WebSocketEventData[WebSocketEvent.GROUP_AVATAR_UPDATED]) => void> = new Set();
   private groupDisbandedListeners: Set<(data: WebSocketEventData[WebSocketEvent.GROUP_DISBANDED]) => void> = new Set();
@@ -96,6 +97,10 @@ class WebSocketService {
 
     this.socket.on(WebSocketEvent.NEW_CONVERSATION, (conversation: WebSocketEventData[WebSocketEvent.NEW_CONVERSATION]) => {
       this.newConversationListeners.forEach(listener => listener(conversation));
+    });
+
+    this.socket.on(WebSocketEvent.CONVERSATION_DELETED, (data: WebSocketEventData[WebSocketEvent.CONVERSATION_DELETED]) => {
+      this.conversationDeletedListeners.forEach(listener => listener(data));
     });
 
     this.socket.on(WebSocketEvent.GROUP_NAME_UPDATED, (data: WebSocketEventData[WebSocketEvent.GROUP_NAME_UPDATED]) => {
@@ -212,6 +217,17 @@ class WebSocketService {
 
     return () => {
       this.newConversationListeners.delete(callback);
+    };
+  }
+
+  /**
+   * 监听会话删除
+   */
+  public onConversationDeleted(callback: (data: WebSocketEventData[WebSocketEvent.CONVERSATION_DELETED]) => void): () => void {
+    this.conversationDeletedListeners.add(callback);
+
+    return () => {
+      this.conversationDeletedListeners.delete(callback);
     };
   }
 

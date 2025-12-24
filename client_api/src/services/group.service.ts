@@ -287,12 +287,12 @@ export class GroupService {
       userId // 排除离开的用户
     );
 
-    // Send CONVERSATION_DELETED event to the leaving user
+    // 通知离开的用户删除会话
     websocketService.sendMessageToUser(userId, WebSocketEvent.CONVERSATION_DELETED, {
       conversationId,
     });
 
-    // Send CONVERSATION_UPDATED event to remaining members
+    // 通知其他成员更新会话
     const remainingMembers = await this.conversationUserRepository.find({
       where: { conversationId, deletedAt: IsNull() },
       select: ["userId"],
