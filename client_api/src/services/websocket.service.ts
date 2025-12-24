@@ -207,6 +207,9 @@ class WebSocketService {
         profile.isOnline = isOnline;
         if (!isOnline) {
           profile.lastSeenAt = new Date();
+        } else {
+          // 当用户上线时，清除 lastSeenAt
+          profile.lastSeenAt = null;
         }
         await userProfileRepository.save(profile);
 

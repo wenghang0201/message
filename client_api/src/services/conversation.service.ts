@@ -626,7 +626,7 @@ export class ConversationService {
    * 获取群聊成员列表 - 优化版，使用eager loading减少查询
    */
   public async getGroupMembers(conversationId: string, userId: string) {
-    // 验证会话是否存在 and user is a member
+    // 验证会话是否存在
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
     });

@@ -125,6 +125,9 @@ export class UserProfileService {
     profile.isOnline = isOnline;
     if (!isOnline) {
       profile.lastSeenAt = new Date();
+    } else {
+      // 当用户上线时，清除 lastSeenAt
+      profile.lastSeenAt = null;
     }
 
     await this.userProfileRepository.save(profile);

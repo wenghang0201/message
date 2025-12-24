@@ -285,7 +285,10 @@ export const useChatStore = defineStore('chat', () => {
     chats.value.forEach(chat => {
       if (chat.type === 'single' && chat.otherUserId === userId) {
         chat.isOnline = isOnline
-        if (lastSeenAt !== undefined) {
+        // 如果用户上线，清除 lastSeenAt；如果下线，更新为新的时间戳
+        if (isOnline) {
+          chat.lastSeenAt = undefined
+        } else if (lastSeenAt !== undefined) {
           chat.lastSeenAt = lastSeenAt
         }
       }
