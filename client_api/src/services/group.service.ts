@@ -6,7 +6,7 @@
  * 专注于群组成员管理和权限控制
  */
 
-import { Repository, IsNull } from "typeorm";
+import { Repository, IsNull, In } from "typeorm";
 import { AppDataSource } from "../config/database";
 import { Conversation, ConversationType } from "../models/Conversation.entity";
 import { ConversationUser, MemberRole } from "../models/ConversationUser.entity";
@@ -130,7 +130,7 @@ export class GroupService {
 
     // 验证所有新成员是否存在
     const users = await this.userRepository.find({
-      where: memberIds.map(id => ({ id })),
+      where: { id: In(memberIds) },
     });
 
     if (users.length !== memberIds.length) {
@@ -139,10 +139,10 @@ export class GroupService {
 
     // 检查是否已经是成员
     const existingMembers = await this.conversationUserRepository.find({
-      where: memberIds.map(memberId => ({
+      where: {
         conversationId,
-        userId: memberId,
-      })),
+        userId: In(memberIds),
+      },
     });
 
     const existingMemberIds = new Set(
