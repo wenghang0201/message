@@ -17,6 +17,7 @@ import { WebSocketEvent } from "../constants/websocket-events";
 import { PrivacyUtil } from "../utils/privacy.util";
 import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
 import { PermissionChecker } from "../utils/permission-checker.util";
+import { SystemMessageCreator } from "../utils/system-message-creator.util";
 
 /**
  * 对话服务
@@ -29,6 +30,7 @@ export class ConversationService {
   private userRepository: Repository<User>;
   private friendRepository: Repository<Friend>;
   private permissionChecker: PermissionChecker;
+  private systemMessageCreator: SystemMessageCreator;
 
   constructor() {
     this.conversationRepository = AppDataSource.getRepository(Conversation);
@@ -42,10 +44,15 @@ export class ConversationService {
       this.conversationRepository,
       this.conversationUserRepository
     );
+    this.systemMessageCreator = new SystemMessageCreator(
+      this.messageRepository,
+      this.conversationUserRepository
+    );
   }
 
   /**
    * 创建系统消息
+   * 使用 SystemMessageCreator 工具类以消除重复代码
    */
   private async createSystemMessage(
     conversationId: string,
@@ -53,43 +60,12 @@ export class ConversationService {
     senderId: string = "system",
     excludeUserId?: string
   ): Promise<Message> {
-    const message = this.messageRepository.create({
+    return this.systemMessageCreator.createSystemMessage(
       conversationId,
-      senderId,
-      type: "system" as any,
       content,
-      isForwarded: false,
-    });
-
-    await this.messageRepository.save(message);
-
-    // 获取所有群成员ID
-    const members = await this.conversationUserRepository.find({
-      where: { conversationId, deletedAt: IsNull() },
-      select: ['userId'],
-    });
-
-    // 通过 WebSocket 广播系统消息给所有成员（排除指定用户）
-    members.forEach(member => {
-      // 跳过被排除的用户
-      if (excludeUserId && member.userId === excludeUserId) {
-        return;
-      }
-
-      websocketService.sendMessageToUser(member.userId, WebSocketEvent.NEW_MESSAGE, {
-        id: message.id,
-        conversationId: message.conversationId,
-        senderId: message.senderId,
-        type: message.type,
-        content: message.content,
-        createdAt: message.createdAt,
-        isForwarded: message.isForwarded,
-        editedAt: message.editedAt,
-        replyToMessageId: message.replyToMessageId,
-      });
-    });
-
-    return message;
+      senderId,
+      excludeUserId
+    );
   }
 
   /**
