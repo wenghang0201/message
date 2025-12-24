@@ -180,6 +180,8 @@ import { showToast } from 'vant'
 import type { RecordingState } from '@/types/voice'
 import type { Message } from '@/types/message'
 import { useWaveSurfer } from '@/composables/useWaveSurfer'
+import { getMessagePreview } from '@/utils/messageFormatter'
+import { TIME_CONSTANTS } from '@/constants/uiLimits'
 
 interface Props {
   editingMessage?: Message | null
@@ -272,12 +274,12 @@ const handleVoiceStart = (event: TouchEvent | MouseEvent) => {
   isVoicePressed.value = true
   voiceStartTime.value = Date.now()
 
-  // 等待 200ms 后再开始录音，以确保是长按而不是点击
+  // 等待 VOICE_PRESS_DELAY 后再开始录音，以确保是长按而不是点击
   voicePressTimer.value = window.setTimeout(() => {
     if (isVoicePressed.value) {
       emit('voiceStart', event)
     }
-  }, 200)
+  }, TIME_CONSTANTS.VOICE_PRESS_DELAY)
 }
 
 const handleVoiceMove = (event: TouchEvent | MouseEvent) => {
@@ -298,9 +300,9 @@ const handleVoiceEnd = () => {
   if (wasPressed) {
     if (recordingState.value.isRecording) {
       emit('voiceEnd')
-    } else if (holdDuration >= 200) {
+    } else if (holdDuration >= TIME_CONSTANTS.VOICE_PRESS_DELAY) {
       emit('voiceEnd')
-    } else if (holdDuration < 200) {
+    } else if (holdDuration < TIME_CONSTANTS.VOICE_PRESS_DELAY) {
       showToast({
         message: '长按录音',
         position: 'top',
@@ -338,21 +340,9 @@ const handleCancelReply = () => {
   emit('cancelReply')
 }
 
+// 使用统一的消息预览工具函数
 const getReplyPreviewText = (message: Message) => {
-  switch (message.type) {
-    case 'text':
-      return message.content
-    case 'image':
-      return '[图片]'
-    case 'video':
-      return '[视频]'
-    case 'voice':
-      return '[语音]'
-    case 'file':
-      return '[文件]'
-    default:
-      return message.content
-  }
+  return getMessagePreview(message.type, message.content)
 }
 
 const updateRecordingState = (state: RecordingState) => {

@@ -127,6 +127,7 @@ import { showImagePreview } from 'vant'
 import type { Message } from '@/types/message'
 import type { User } from '@/types/user'
 import { formatMessageTime, formatDuration } from '@/utils/dateFormat'
+import { getMessagePreview } from '@/utils/messageFormatter'
 import { useAppStore } from '@/stores/app'
 import { useMessageStore } from '@/stores/message'
 import { useWaveSurfer } from '@/composables/useWaveSurfer'
@@ -168,21 +169,9 @@ const repliedSenderName = computed(() => {
   return props.repliedSenderName || '用户'
 })
 
+// 使用统一的消息预览工具函数
 const getReplyPreviewText = (message: Message) => {
-  switch (message.type) {
-    case 'text':
-      return message.content
-    case 'image':
-      return '[图片]'
-    case 'video':
-      return '[视频]'
-    case 'voice':
-      return '[语音]'
-    case 'file':
-      return '[文件]'
-    default:
-      return message.content
-  }
+  return getMessagePreview(message.type, message.content)
 }
 
 // 暴露 ref 给父组件

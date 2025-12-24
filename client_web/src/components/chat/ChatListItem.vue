@@ -17,7 +17,7 @@
         />
         <van-badge
           v-if="chat.unreadCount > 0"
-          :content="chat.unreadCount > 99 ? '99+' : chat.unreadCount"
+          :content="formatUnreadCount(chat.unreadCount)"
           max="99"
           color="var(--chat-badge-bg)"
           class="unread-badge"
@@ -80,8 +80,9 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Chat } from '@/types/chat'
-import { MessageType } from '@/types/message'
-import { formatChatTime } from '@/utils/dateFormat'
+import { formatChatTime, formatLastSeen } from '@/utils/dateFormat'
+import { getMessagePreview as getMessagePreviewUtil } from '@/utils/messageFormatter'
+import { formatUnreadCount, isChatMuted } from '@/utils/chatHelper'
 import Avatar from '@/components/common/Avatar.vue'
 
 interface Props {
@@ -104,11 +105,7 @@ const formattedTime = computed(() => {
   return formatChatTime(props.chat.lastMessage.timestamp)
 })
 
-const isMuted = computed(() => {
-  if (!props.chat.mutedUntil) return false
-  // 检查静音是否已过期
-  return props.chat.mutedUntil > Date.now()
-})
+const isMuted = computed(() => isChatMuted(props.chat))
 
 // 单聊且离线时显示最后在线时间（没有未读消息的情况下）
 const showLastSeen = computed(() => {
@@ -125,45 +122,10 @@ const lastSeenText = computed(() => {
   return ''
 })
 
-const formatLastSeen = (timestamp: number): string => {
-  const now = Date.now()
-  const diff = now - timestamp
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-
-  if (minutes < 1) {
-    return '刚刚在线'
-  } else if (minutes < 60) {
-    return `${minutes}分钟前在线`
-  } else if (hours < 24) {
-    return `${hours}小时前在线`
-  } else if (days < 7) {
-    return `${days}天前在线`
-  } else {
-    const date = new Date(timestamp)
-    return `${date.getMonth() + 1}月${date.getDate()}日在线`
-  }
-}
-
 const getMessagePreview = (): string => {
   const msg = props.chat.lastMessage
   if (!msg) return ''
-
-  switch (msg.type) {
-    case MessageType.TEXT:
-      return msg.content
-    case MessageType.IMAGE:
-      return '[图片]'
-    case MessageType.VIDEO:
-      return '[视频]'
-    case MessageType.VOICE:
-      return '[语音]'
-    case MessageType.FILE:
-      return '[文件]'
-    default:
-      return msg.content
-  }
+  return getMessagePreviewUtil(msg.type, msg.content)
 }
 
 const handleClick = () => {

@@ -147,6 +147,9 @@ import ForwardMessageDialog from '@/components/chat/ForwardMessageDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { Message } from '@/types/message'
 import { useVoiceRecordingWorkflow } from '@/composables/useVoiceRecordingWorkflow'
+import { useChatStatus } from '@/composables/useChatStatus'
+import { useWebSocketSubscriptions } from '@/composables/useWebSocketSubscriptions'
+import { useMessageActions } from '@/composables/useMessageActions'
 import websocketService from '@/services/websocket.service'
 
 interface Props {
@@ -222,38 +225,8 @@ const chatTitle = computed(() => {
   return currentChat.value.name
 })
 
-const statusText = computed(() => {
-  if (!currentChat.value || currentChat.value.type !== 'single') return ''
-
-  if (currentChat.value.isOnline) {
-    return '在线'
-  } else if (currentChat.value.lastSeenAt) {
-    return formatLastSeen(currentChat.value.lastSeenAt)
-  }
-
-  return ''
-})
-
-const formatLastSeen = (timestamp: number): string => {
-  const now = Date.now()
-  const diff = now - timestamp
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-
-  if (minutes < 1) {
-    return '刚刚在线'
-  } else if (minutes < 60) {
-    return `${minutes}分钟前在线`
-  } else if (hours < 24) {
-    return `${hours}小时前在线`
-  } else if (days < 7) {
-    return `${days}天前在线`
-  } else {
-    const date = new Date(timestamp)
-    return `${date.getMonth() + 1}月${date.getDate()}日在线`
-  }
-}
+// 使用 useChatStatus composable 管理在线状态
+const { statusText } = useChatStatus(currentChat)
 
 // 检查用户是否可以发送消息
 const canInteract = computed(() => {
@@ -265,53 +238,25 @@ const canInteract = computed(() => {
   return true
 })
 
+// 使用 useMessageActions composable 管理消息操作
+const selectedMessageForActions = computed(() => selectedMessage.value ?? undefined)
+const { actions: messageActionsFromComposable } = useMessageActions(selectedMessageForActions, currentUserId)
 const messageActions = computed<ActionSheetAction[]>(() => {
-  if (!selectedMessage.value) return []
-
-  const actions: ActionSheetAction[] = []
-
-  // 复制功能 - 仅文本消息
-  if (selectedMessage.value.type === 'text' && !selectedMessage.value.isRecalled) {
-    actions.push({ name: '复制', icon: 'notes-o' })
-  }
-
-  // 回复功能 - 所有未撤回的消息
-  if (!selectedMessage.value.isRecalled) {
-    actions.push({ name: '回复', icon: 'chat-o' })
-  }
-
-  // 转发功能 - 所有未撤回的消息
-  if (!selectedMessage.value.isRecalled) {
-    actions.push({ name: '转发', icon: 'share-o' })
-  }
-
-  // 编辑功能 - 仅自己的文本消息且未撤回
-  if (selectedMessage.value.senderId === currentUserId.value && selectedMessage.value.type === 'text' && !selectedMessage.value.isRecalled) {
-    actions.push({ name: '编辑', icon: 'edit' })
-  }
-
-  // 多选功能 - 所有未撤回的消息
-  if (!selectedMessage.value.isRecalled) {
-    actions.push({ name: '多选', icon: 'checkbox-marked' })
-  }
-
-  // 删除功能 - 仅自己的消息，5分钟内
-  if (selectedMessage.value.senderId === currentUserId.value) {
-    const now = Date.now()
-    const diffMinutes = (now - selectedMessage.value.timestamp) / 1000 / 60
-
-    // 5分钟内的消息可以删除
-    if (diffMinutes <= 5) {
-      actions.push({ name: '删除', icon: 'delete-o', color: '#ee0a24' })
+  return messageActionsFromComposable.value.map(action => {
+    const actionSheet: ActionSheetAction = {
+      name: action.name,
+      icon: action.icon
     }
-  }
-
-  return actions
+    // 删除操作设置为红色
+    if (action.name === '删除') {
+      actionSheet.color = '#ee0a24'
+    }
+    return actionSheet
+  })
 })
 
-let unsubscribeGroupNameUpdated: (() => void) | null = null
-let unsubscribeGroupAvatarUpdated: (() => void) | null = null
-let unsubscribeUserStatusChanged: (() => void) | null = null
+// 使用 useWebSocketSubscriptions composable 管理 WebSocket 订阅
+const { subscribe } = useWebSocketSubscriptions()
 
 onMounted(async () => {
   // 将当前用户从 authStore 同步到 userStore
@@ -338,27 +283,27 @@ onMounted(async () => {
   websocketService.joinConversation(props.id)
 
   // 监听群组名称更新
-  unsubscribeGroupNameUpdated = websocketService.onGroupNameUpdated((data) => {
+  subscribe(websocketService.onGroupNameUpdated((data) => {
     if (data.conversationId === props.id) {
       // 更新聊天 store 以在导航栏中反映新名称
       chatStore.updateChat(data.conversationId, {
         name: data.name,
       })
     }
-  })
+  }))
 
   // 监听群组头像更新
-  unsubscribeGroupAvatarUpdated = websocketService.onGroupAvatarUpdated((data) => {
+  subscribe(websocketService.onGroupAvatarUpdated((data) => {
     if (data.conversationId === props.id) {
       // 更新聊天 store 以反映新头像
       chatStore.updateChat(data.conversationId, {
         avatar: data.avatarUrl,
       })
     }
-  })
+  }))
 
   // 监听用户在线状态变化
-  unsubscribeUserStatusChanged = websocketService.onUserStatusChanged((data) => {
+  subscribe(websocketService.onUserStatusChanged((data) => {
     if (currentChat.value?.type === 'single' && currentChat.value.otherUserId === data.userId) {
       chatStore.updateUserOnlineStatus(
         data.userId,
@@ -366,7 +311,7 @@ onMounted(async () => {
         data.lastSeenAt ? new Date(data.lastSeenAt).getTime() : undefined
       )
     }
-  })
+  }))
 
   await loadMessages()
   scrollToBottom()
@@ -379,21 +324,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   // 离开 WebSocket 会话房间
   websocketService.leaveConversation(props.id)
-
-  // 取消订阅群组名称更新
-  if (unsubscribeGroupNameUpdated) {
-    unsubscribeGroupNameUpdated()
-  }
-
-  // 取消订阅群组头像更新
-  if (unsubscribeGroupAvatarUpdated) {
-    unsubscribeGroupAvatarUpdated()
-  }
-
-  // 取消订阅用户状态更新
-  if (unsubscribeUserStatusChanged) {
-    unsubscribeUserStatusChanged()
-  }
+  // WebSocket 订阅会通过 useWebSocketSubscriptions 自动清理
 })
 
 // 监听聊天 ID 变化
