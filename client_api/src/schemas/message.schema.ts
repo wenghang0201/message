@@ -1,5 +1,6 @@
 import * as yup from "yup";
 import { MessageType } from "../models/Message.entity";
+import { MESSAGE_LIMITS } from "../constants/business.config";
 
 /**
  * 发送消息
@@ -19,7 +20,7 @@ export const sendMessageSchema = yup.object({
   content: yup
     .string()
     .required("Content is required")
-    .max(10000, "Content too long"),
+    .max(MESSAGE_LIMITS.MAX_CONTENT_LENGTH, "Content too long"),
   thumbnail: yup.string().url("Invalid thumbnail URL").optional(),
   duration: yup.number().positive("Duration must be positive").optional(),
   replyToMessageId: yup
@@ -36,7 +37,7 @@ export const updateMessageSchema = yup.object({
   content: yup
     .string()
     .required("Content is required")
-    .max(10000, "Content too long"),
+    .max(MESSAGE_LIMITS.MAX_CONTENT_LENGTH, "Content too long"),
 });
 
 /**
@@ -47,7 +48,7 @@ export const batchDeleteMessagesSchema = yup.object({
     .array()
     .of(yup.string().uuid("Invalid message ID format").required())
     .min(1, "At least one message ID is required")
-    .max(100, "Cannot delete more than 100 messages at once")
+    .max(MESSAGE_LIMITS.MAX_BATCH_SIZE, `Cannot delete more than ${MESSAGE_LIMITS.MAX_BATCH_SIZE} messages at once`)
     .required("Message IDs are required"),
 });
 
@@ -65,9 +66,9 @@ export const getMessagesQuerySchema = yup.object({
     .number()
     .integer("Limit must be an integer")
     .positive("Limit must be positive")
-    .max(100, "Limit cannot exceed 100")
+    .max(MESSAGE_LIMITS.MAX_BATCH_SIZE, `Limit cannot exceed ${MESSAGE_LIMITS.MAX_BATCH_SIZE}`)
     .optional()
-    .default(30),
+    .default(MESSAGE_LIMITS.DEFAULT_PAGE_SIZE),
 });
 
 /**

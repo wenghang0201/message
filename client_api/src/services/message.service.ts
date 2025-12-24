@@ -11,6 +11,7 @@ import {
 } from "../utils/app-error.util";
 import { SendMessageDto } from "../schemas/message.schema";
 import conversationService from "./conversation.service";
+import { MESSAGE_LIMITS } from "../constants/business.config";
 
 /**
  * 消息服务
@@ -159,7 +160,7 @@ export class MessageService {
     conversationId: string,
     userId: string,
     page: number = 1,
-    limit: number = 30
+    limit: number = MESSAGE_LIMITS.DEFAULT_PAGE_SIZE
   ): Promise<{ messages: Message[]; total: number; hasMore: boolean }> {
     // 验证用户是否是对话的活跃成员（排除已退出的成员）
     const member = await this.conversationUserRepository.findOne({

@@ -18,7 +18,7 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { SystemMessageCreator } from "../utils/system-message-creator.util";
-import { SPECIAL_DATES } from "../constants/app.config";
+import { SPECIAL_DATES } from "../constants/business.config";
 import websocketService from "./websocket.service";
 import { WebSocketEvent } from "../constants/websocket-events";
 

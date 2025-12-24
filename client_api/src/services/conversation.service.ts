@@ -10,7 +10,7 @@ import {
   ValidationError,
 } from "../utils/app-error.util";
 import { ConversationListItem } from "../types/conversation.types";
-import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
+import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/business.config";
 import conversationCoreService from "./conversation-core.service";
 import groupService from "./group.service";
 import conversationPermissionService from "./conversation-permission.service";

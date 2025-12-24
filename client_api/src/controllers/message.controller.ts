@@ -5,6 +5,7 @@ import { ResponseUtil } from "../utils/response.util";
 import websocketService from "../services/websocket.service";
 import conversationService from "../services/conversation.service";
 import { WebSocketEvent } from "../constants/websocket-events";
+import { MESSAGE_LIMITS } from "../constants/business.config";
 
 /**
  * 消息控制器
@@ -60,7 +61,7 @@ export class MessageController {
       const userId = req.userId!;
       const { conversationId } = req.params;
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 30;
+      const limit = parseInt(req.query.limit as string) || MESSAGE_LIMITS.DEFAULT_PAGE_SIZE;
 
       const result = await messageService.getMessages(
         conversationId,

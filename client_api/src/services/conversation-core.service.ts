@@ -14,7 +14,7 @@ import {
 import { ConversationListItem } from "../types/conversation.types";
 import { PrivacyUtil } from "../utils/privacy.util";
 import { SystemMessageCreator } from "../utils/system-message-creator.util";
-import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/app.config";
+import { CONVERSATION_LIMITS, SPECIAL_DATES } from "../constants/business.config";
 
 /**
  * 会话核心服务
