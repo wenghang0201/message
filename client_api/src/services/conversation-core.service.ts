@@ -64,7 +64,7 @@ export class ConversationCoreService {
 
     const conversationIds = conversationUsers.map(cu => cu.conversation.id);
 
-    // 2. Batch fetch all conversation participants (one query instead of N) - using eager loading
+    // 2. 批量获取所有对话的参与者（一次查询代替 N 次）- 使用预加载
     const allParticipants = await this.conversationUserRepository
       .createQueryBuilder("cu")
       .leftJoinAndSelect("cu.user", "user")
@@ -72,7 +72,7 @@ export class ConversationCoreService {
       .where("cu.conversationId IN (:...conversationIds)", { conversationIds })
       .getMany();
 
-    // Group participants by conversation ID
+    // 按对话 ID 分组参与者
     const participantsByConversation = new Map<string, ConversationUser[]>();
     allParticipants.forEach(participant => {
       const conversationId = participant.conversationId;
@@ -82,8 +82,8 @@ export class ConversationCoreService {
       participantsByConversation.get(conversationId)!.push(participant);
     });
 
-    // 3. Batch fetch last messages (one query instead of N)
-    // Note: Need to consider each user's hiddenUntil
+    // 3. 批量获取最后一条消息（一次查询代替 N 次）
+    // 注意：需要考虑每个用户的 hiddenUntil
     const lastMessages = await this.messageRepository
       .createQueryBuilder("message")
       .where("message.conversationId IN (:...conversationIds)", { conversationIds })
@@ -100,13 +100,13 @@ export class ConversationCoreService {
       })
       .getMany();
 
-    // Map last messages by conversation ID
+    // 按对话 ID 映射最后消息
     const lastMessageByConversation = new Map<string, Message>();
     lastMessages.forEach(msg => {
       lastMessageByConversation.set(msg.conversationId, msg);
     });
 
-    // 4. Build conversation list
+    // 4. 构建对话列表
     const conversations: ConversationListItem[] = [];
 
     for (const cu of conversationUsers) {
@@ -118,7 +118,7 @@ export class ConversationCoreService {
       let isOnline: boolean | undefined;
       let lastSeenAt: Date | null | undefined;
 
-      // Single chat: Get other user info from loaded participants
+      // 单聊：从已加载的参与者中获取对方用户信息
       if (conversation.type === ConversationType.SINGLE) {
         const participants = participantsByConversation.get(conversation.id) || [];
         const otherParticipant = participants.find(p => p.userId !== userId);
@@ -128,26 +128,26 @@ export class ConversationCoreService {
           name = otherParticipant.user.username;
           avatar = otherParticipant.user.profile?.avatarUrl || null;
 
-          // Check if current user has permission to see other user's online status
+          // 检查当前用户是否有权查看对方的在线状态
           const canSeeStatus = await PrivacyUtil.canSeeLastSeen(userId, otherParticipant.userId);
 
           if (canSeeStatus) {
             isOnline = otherParticipant.user.profile?.isOnline || false;
             lastSeenAt = otherParticipant.user.profile?.lastSeenAt || null;
           } else {
-            // No permission, don't return online status
+            // 没有权限，不返回在线状态
             isOnline = undefined;
             lastSeenAt = undefined;
           }
         }
       }
 
-      // Get last message (from loaded map)
+      // 获取最后一条消息（从已加载的映射中获取）
       let lastMessage = lastMessageByConversation.get(conversation.id) || null;
 
-      // If user has hiddenUntil, filter out messages before that time
+      // 如果用户有 hiddenUntil，需要过滤掉该时间之前的消息
       if (lastMessage && cu.hiddenUntil && lastMessage.createdAt <= cu.hiddenUntil) {
-        // Need to re-query for last message after that time
+        // 需要重新查询该时间之后的最后一条消息
         const filteredMessage = await this.messageRepository
           .createQueryBuilder("message")
           .where("message.conversationId = :conversationId", { conversationId: conversation.id })
