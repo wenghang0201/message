@@ -44,6 +44,19 @@ export const SPECIAL_DATES = {
 
 // 限流配置
 export const RATE_LIMITS = {
-  API_REQUESTS_PER_WINDOW: 100,    // 窗口内API请求限制
-  AUTH_REQUESTS_PER_WINDOW: 5,     // 窗口内认证请求限制
+  // 认证限流
+  AUTH_MAX_REQUESTS: 20,
+  AUTH_WINDOW_MS: 15 * 60 * 1000,           // 15分钟
+
+  // 密码修改限流
+  PASSWORD_CHANGE_MAX_REQUESTS: 3,
+  PASSWORD_CHANGE_WINDOW_MS: 60 * 60 * 1000, // 1小时
+
+  // API通用限流
+  API_MAX_REQUESTS: 300,
+  API_WINDOW_MS: 1 * 60 * 1000,             // 1分钟
+
+  // 读取操作限流
+  READ_OPS_MAX_REQUESTS: 200,
+  READ_OPS_WINDOW_MS: 1 * 60 * 1000,        // 1分钟
 } as const;

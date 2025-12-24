@@ -1,13 +1,14 @@
 import rateLimit from "express-rate-limit";
 import Log from "../utils/log.util";
+import { RATE_LIMITS } from "../constants/business.config";
 
 /**
  * 认证端点的速率限制器
  * 防止登录/注册的暴力破解攻击
  */
 export const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分钟
-  max: 20, // 每个IP每15分钟最多20次请求（放宽限制，适应开发测试）
+  windowMs: RATE_LIMITS.AUTH_WINDOW_MS,
+  max: RATE_LIMITS.AUTH_MAX_REQUESTS,
   message: {
     success: false,
     error: {
@@ -34,8 +35,8 @@ export const authRateLimiter = rateLimit({
  * 更严格的限制以防止密码修改攻击
  */
 export const passwordChangeRateLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1小时
-  max: 3, // 每个IP每小时最多3次密码修改
+  windowMs: RATE_LIMITS.PASSWORD_CHANGE_WINDOW_MS,
+  max: RATE_LIMITS.PASSWORD_CHANGE_MAX_REQUESTS,
   message: {
     success: false,
     error: {
@@ -62,8 +63,8 @@ export const passwordChangeRateLimiter = rateLimit({
  * 防止API滥用
  */
 export const apiRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1分钟（缩短窗口时间以适应实时应用）
-  max: 300, // 每个IP每分钟最多300次请求（大幅提高限制，约5 req/s）
+  windowMs: RATE_LIMITS.API_WINDOW_MS,
+  max: RATE_LIMITS.API_MAX_REQUESTS,
   message: {
     success: false,
     error: {
@@ -94,8 +95,8 @@ export const apiRateLimiter = rateLimit({
  * 用于高频读取操作，限制更宽松
  */
 export const readOperationsRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1分钟
-  max: 200, // 每个IP每分钟最多200次请求（大幅提高限制，适应实时消息应用）
+  windowMs: RATE_LIMITS.READ_OPS_WINDOW_MS,
+  max: RATE_LIMITS.READ_OPS_MAX_REQUESTS,
   message: {
     success: false,
     error: {
