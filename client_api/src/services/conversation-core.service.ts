@@ -159,6 +159,19 @@ export class ConversationCoreService {
         lastMessage = filteredMessage || null;
       }
 
+      // 如果用户已被移除（deletedAt 不为空），只显示移除之前的最后一条消息
+      if (lastMessage && cu.deletedAt && lastMessage.createdAt > cu.deletedAt) {
+        // 需要重新查询移除时间之前的最后一条消息
+        const filteredMessage = await this.messageRepository
+          .createQueryBuilder("message")
+          .where("message.conversationId = :conversationId", { conversationId: conversation.id })
+          .andWhere("message.deletedAt IS NULL")
+          .andWhere("message.createdAt <= :deletedAt", { deletedAt: cu.deletedAt })
+          .orderBy("message.createdAt", "DESC")
+          .getOne();
+        lastMessage = filteredMessage || null;
+      }
+
       // 计算未读数（保持原有的位置计算逻辑）
       const unreadCount = await this.getUnreadCount(conversation.id, userId);
 
